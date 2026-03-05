@@ -8,22 +8,70 @@
   font-weight: bold;
 }
 
+.topRow {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.dropZoneWrapper {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dropZoneHeading {
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
+  text-align: center;
+}
+
 .dropZone {
+  aspect-ratio: 320 / 200;
   border: 2px dashed rgba(255, 255, 255, 0.3);
   border-radius: 4px;
-  padding: 16px;
-  text-align: center;
   cursor: pointer;
-  margin-bottom: 12px;
   transition: border-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a1a;
+  overflow: hidden;
 }
 
 .dropZone:hover {
   border-color: rgba(255, 255, 255, 0.6);
 }
 
+.dropZoneHasImage {
+  border-style: solid;
+  border-color: #555;
+}
+
+.dropZoneHasImage:hover {
+  border-color: #888;
+}
+
+.dropZoneImage {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 .settings {
-  margin-bottom: 12px;
+  width: 340px;
+  flex-shrink: 0;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 10px 12px;
+}
+
+.settings legend {
+  font-size: 12px;
+  color: #999;
+  padding: 0 6px;
 }
 
 .settingsRow {
@@ -60,21 +108,65 @@
   font-family: monospace;
 }
 
-.bgSwatches {
+.bgPanel {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 10px 12px;
+  align-self: flex-start;
+}
+
+.bgPanel legend {
+  font-size: 12px;
+  color: #999;
+  padding: 0 6px;
+}
+
+.bgPanelLabel {
+  font-size: 11px;
+  color: #999;
+  margin-bottom: 4px;
+}
+
+.paletteSelect {
+  width: 100%;
+  background: #444;
+  color: #ddd;
+  border: 1px solid #666;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.bgSwatches {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 20px));
   gap: 2px;
-  flex-wrap: wrap;
-  align-items: center;
+  width: max-content;
+}
+
+.bgSwatches button {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1;
 }
 
 .bgAuto {
-  font-size: 11px;
-  padding: 2px 6px;
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 24px;
   background: #555;
   color: #ddd;
   border: 2px solid transparent;
-  border-radius: 3px;
+  border-radius: 2px;
   cursor: pointer;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 .bgAuto.active {
@@ -82,12 +174,12 @@
 }
 
 .bgSwatch {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border: 2px solid transparent;
   border-radius: 2px;
   cursor: pointer;
-  padding: 0;
+  box-sizing: border-box;
 }
 
 .bgSwatch.active {
@@ -120,10 +212,12 @@
   display: flex;
   gap: 12px;
   margin-bottom: 12px;
+  justify-content: center;
 }
 
 .previewPanel {
-  flex: 1;
+  width: 320px;
+  flex-shrink: 0;
   text-align: center;
 }
 
@@ -134,6 +228,7 @@
 
 .previewCanvas {
   width: 100%;
+  max-width: 320px;
   image-rendering: pixelated;
   border: 1px solid #555;
 }
