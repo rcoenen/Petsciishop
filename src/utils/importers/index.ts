@@ -69,3 +69,4 @@ export function loadMarqCFramebuf(content: string): Framebuf[] {
 
 export { loadD64Framebuf } from './d64'
 export { loadSeq } from './seq2petscii'
+export { loadSDD } from './importSdd'

@@ -32,14 +32,16 @@ export function dispatchMenuCommand(
       dispatch(ReduxRoot.actions.redo());
       return;
     case 'new':
-      if (promptProceedWithUnsavedChanges(getState(), {
+      promptProceedWithUnsavedChanges(getState(), {
         title: 'Reset',
         detail: 'This will empty your workspace.  This cannot be undone.'
-      })) {
-        dispatch(ReduxRoot.actions.resetState());
-        dispatch(Screens.actions.newScreen());
-        dispatch(ReduxRoot.actions.updateLastSavedSnapshot());
-      }
+      }).then(ok => {
+        if (ok) {
+          dispatch(ReduxRoot.actions.resetState());
+          dispatch(Screens.actions.newScreen());
+          dispatch(ReduxRoot.actions.updateLastSavedSnapshot());
+        }
+      });
       return;
     case 'open':
       dispatch(ReduxRoot.actions.fileOpenWorkspace());
@@ -77,6 +79,9 @@ export function dispatchMenuCommand(
     case 'export-pet':
       dispatchExport(dispatch, formats.pet);
       return;
+    case 'export-sdd':
+      dispatchExport(dispatch, formats.sdd);
+      return;
     case 'import-d64':
       dispatch(ReduxRoot.actions.fileImportAppend(formats.d64));
       return;
@@ -88,6 +93,9 @@ export function dispatchMenuCommand(
       return;
     case 'import-seq':
       dispatch(ReduxRoot.actions.fileImportAppend(formats.seq));
+      return;
+    case 'import-sdd':
+      dispatch(ReduxRoot.actions.fileImportAppend(formats.sdd));
       return;
     case 'preferences':
       dispatch(Toolbar.actions.setShowSettings(true));

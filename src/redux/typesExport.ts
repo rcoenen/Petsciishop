@@ -78,6 +78,10 @@ export interface FileFormatPet extends FileFormatBase {
   ext: 'pet';
 }
 
+export interface FileFormatSdd extends FileFormatBase {
+  ext: 'sdd';
+}
+
 export type FileFormat =
     FileFormatAsm
   | FileFormatD64
@@ -89,3 +93,4 @@ export type FileFormat =
   | FileFormatJson
   | FileFormatSeq
   | FileFormatPet
+  | FileFormatSdd

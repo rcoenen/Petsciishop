@@ -4,6 +4,7 @@ import { bindActionCreators } from 'redux';
 import memoize  from 'fast-memoize'
 import classnames from 'classnames'
 import Modal from '../components/Modal'
+import { showAlert } from '../utils/dialog'
 
 import * as toolbar from '../redux/toolbar'
 import * as ReduxRoot from '../redux/root'
@@ -228,7 +229,7 @@ class ImportModal_ extends Component<ImportModalProps & ImportModalDispatch, Imp
   handleSelectPng = () => {
     pickAndReadFile('.png').then(({ data }) => {
       decodePng(data).then(png => this.setPNG(png)).catch(err => {
-        alert(`Failed to decode PNG: ${err.message}`);
+        showAlert(`Failed to decode PNG: ${err.message}`);
       });
     }).catch(() => {
       // User cancelled file picker — no action needed

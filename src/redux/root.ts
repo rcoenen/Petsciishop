@@ -21,7 +21,7 @@ import * as settings from './settings'
 import * as workspace from './workspace'
 import * as screensSelectors from '../redux/screensSelectors'
 import { Toolbar } from './toolbar'
-import { showConfirm } from '../utils/dialog'
+import { showAlert, showConfirm } from '../utils/dialog'
 import {
   dialogLoadWorkspace,
   dialogSaveAsWorkspace,
@@ -80,7 +80,7 @@ export const actions = {
         }
       } catch(e) {
         console.error(e)
-        alert(`Failed to load workspace!`)
+        showAlert('Failed to load workspace!')
       }
     }
   },

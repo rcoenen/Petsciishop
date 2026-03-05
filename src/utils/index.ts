@@ -1,5 +1,5 @@
 
-import { loadMarqCFramebuf, loadD64Framebuf, loadSeq } from './importers'
+import { loadMarqCFramebuf, loadD64Framebuf, loadSeq, loadSDD } from './importers'
 import {
   savePNG,
   saveMarqC,
@@ -11,6 +11,8 @@ import {
   saveSEQ,
   savePET
 } from './exporters'
+import { saveSDD } from './exporters/exportSdd'
+import { showAlert } from './dialog'
 
 import {
   drawLine
@@ -120,6 +122,11 @@ export const formats: { [index: string]: FileFormat } = {
     ext: 'pet',
     commonExportParams: defaultExportCommon,
   },
+  sdd: {
+    name: 'Screen Designer Data .sdd',
+    ext: 'sdd',
+    commonExportParams: defaultExportCommon,
+  },
 }
 
 export function rgbToCssRgb(o: Rgb) {
@@ -205,6 +212,8 @@ async function getExportData(
     return { data: saveJSON(framebufs, fonts, fmt as any), mimeType: 'application/json' };
   } else if (fmt.ext === 'pet') {
     return { data: savePET(framebufs, fmt as any), mimeType: 'application/octet-stream' };
+  } else if (fmt.ext === 'sdd') {
+    return { data: saveSDD(selectedFramebuf), mimeType: 'application/xml' };
   }
   throw new Error("shouldn't happen");
 }
@@ -256,6 +265,8 @@ export async function loadFramebuf(content: string | Uint8Array, ext: string): P
   } else if (ext === '.seq') {
     const fb = loadSeq(content as Uint8Array);
     return [fb];
+  } else if (ext === '.sdd') {
+    return loadSDD(content as string);
   }
   return [];
 }
@@ -332,7 +343,7 @@ export async function dialogExportFile(
     const { data, mimeType } = await getExportData(fmt, framebufs, cf, palette);
     downloadBlob(data, `export.${fmt.ext}`, mimeType);
   } catch(e: any) {
-    alert(`Export failed: ${e.message ?? e}`);
+    showAlert(`Export failed: ${e.message ?? e}`);
     console.error(e);
   }
 }
@@ -340,7 +351,7 @@ export async function dialogExportFile(
 export async function dialogImportFile(type: FileFormat, importFile: (fbs: Framebuf[]) => void) {
   try {
     const ext = `.${type.ext}`;
-    if (type.ext === 'c') {
+    if (type.ext === 'c' || type.ext === 'sdd') {
       const { text } = await pickAndReadTextFile(`.${type.ext}`);
       const fbs = await loadFramebuf(text, ext);
       if (fbs.length > 0) importFile(fbs);
@@ -375,16 +386,9 @@ export function saveSettings(settings: Settings) {
   }
 }
 
-export function promptProceedWithUnsavedChanges(state: RootState, msg: { title: string, detail: string }) {
+export async function promptProceedWithUnsavedChanges(state: RootState, msg: { title: string, detail: string }): Promise<boolean> {
   if (selectors.anyUnsavedChanges(state)) {
-    return window.confirm(`Workspace contains unsaved changes.\n\n${msg.detail}`);
-  }
-  return true;
-}
-
-export function promptProceedWithUnsavedChangesInFramebuf(state: RootState, fbIndex: number, msg: { title: string, detail: string }) {
-  if (selectors.anyUnsavedChangesInFramebuf(state, fbIndex)) {
-    return window.confirm(`Screen contains unsaved changes.\n\n${msg.detail}`);
+    return (await import('./dialog')).showConfirm(`Workspace contains unsaved changes.\n\n${msg.detail}`);
   }
   return true;
 }

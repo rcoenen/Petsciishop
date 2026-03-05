@@ -26,6 +26,7 @@ const importers: MenuItemDef[] = [
   { label: 'D64 disk image (.d64)', cmd: 'import-d64' },
   { label: 'PETSCII (.c)',           cmd: 'import-marq-c' },
   { label: 'PNG (.png)',             cmd: 'import-png' },
+  { label: 'Screen Designer (.sdd)', cmd: 'import-sdd' },
   { label: 'SEQ (.seq)',             cmd: 'import-seq' },
 ];
 
@@ -39,6 +40,7 @@ const exporters: MenuItemDef[] = [
   { label: 'PNG (.png)',              cmd: 'export-png' },
   { label: 'SEQ (.seq)',              cmd: 'export-seq' },
   { label: 'PET (.pet)',              cmd: 'export-pet' },
+  { label: 'Screen Designer (.sdd)', cmd: 'export-sdd' },
 ];
 
 const menuDefs: Array<{ label: string; items: ItemDef[] }> = [
