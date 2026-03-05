@@ -27,7 +27,7 @@ import * as toolbar from '../redux/toolbar'
 import * as screens from '../redux/screens'
 import * as selectors from '../redux/selectors'
 import * as screensSelectors from '../redux/screensSelectors'
-import { getSettingsCurrentColorPalette } from '../redux/settingsSelectors'
+import { getEffectiveColorPalette } from '../redux/settingsSelectors'
 
 import * as utils from '../utils'
 import * as fp from '../utils/fp'
@@ -453,7 +453,7 @@ interface FramebufferTabsDispatch {
 interface FramebufferTabsProps {
   screens: number[];
   activeScreen: number;
-  colorPalette: Rgb[];
+  getColorPaletteByIndex: (idx: number) => Rgb[];
   newScreenSize: { width: number, height: number };
   showColorModeLabels: boolean;
 
@@ -509,7 +509,7 @@ function FramebufferTabs_(props: FramebufferTabsProps & FramebufferTabsDispatch)
         framebuf={fb}
         active={i === props.activeScreen}
         font={font}
-        colorPalette={props.colorPalette}
+        colorPalette={props.getColorPaletteByIndex(framebufId)}
         setName={props.setFramebufName}
         showColorModeLabels={props.showColorModeLabels}
       />
@@ -542,7 +542,7 @@ export default connect(
       screens: screensSelectors.getScreens(state),
       getFramebufByIndex: (idx: number) => selectors.getFramebufByIndex(state, idx),
       getFont: (fb: Framebuf) => selectors.getFramebufFont(state, fb),
-      colorPalette: getSettingsCurrentColorPalette(state),
+      getColorPaletteByIndex: (idx: number) => getEffectiveColorPalette(state, idx),
       showColorModeLabels: state.toolbar.showColorModeLabels
     }
   },

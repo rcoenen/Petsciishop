@@ -1,112 +1,23 @@
 // @flow
-import React, { Component, FunctionComponent } from 'react';
+import React, { Component } from 'react';
 import * as utils from '../utils'
-import * as fp from '../utils/fp'
-
-import { SortableContainer, SortableElement, arrayMove } from '../external/react-sortable-hoc'
 
 import styles from './ColorPicker.module.css';
 import { Rgb } from '../redux/types';
 
-interface PaletteIndexProps {
-  color: number;
-  colorPalette: Rgb[];
-}
-
-const ColorBlock: FunctionComponent<PaletteIndexProps & {hover:boolean}> = ({ color, colorPalette, hover }) => {
-  const bg = utils.colorIndexToCssRgb(colorPalette, color)
-  const style = {
-    backgroundColor: bg,
-    width: '13px',
-    height: '13px',
-    marginRight: '2px'
-  }
-  const cls = hover ? styles.box : styles.boxNoHover
-  return (
-    <div style={style} className={cls}/>
-  )
-}
-
-const SortableItem = SortableElement(({color, colorPalette}: PaletteIndexProps) =>
-  <ColorBlock color={color} hover={true} colorPalette={colorPalette} />
-)
-
-const SortableList = SortableContainer((props: { items: number[], colorPalette: Rgb[] }) => {
-  return (
-    <div className={styles.container}>
-      {props.items.map((value, index) => (
-        <SortableItem
-          key={`item-${index}`}
-          index={index}
-          color={value}
-          colorPalette={props.colorPalette}
-        />
-      ))}
-    </div>
-  );
-})
-
-interface SortableColorPaletteProps {
-  colorPalette: Rgb[];
-  palette: number[];
-  setPalette: (remap: number[]) => void;
-}
-
-export class SortableColorPalette extends Component<SortableColorPaletteProps> {
-  onSortEnd = (args: {oldIndex: number, newIndex: number}) => {
-    const newArr = arrayMove(this.props.palette, args.oldIndex, args.newIndex)
-    this.props.setPalette(newArr)
-  }
-  render () {
-    return (
-      <SortableList
-        helperClass={styles.sortableHelper}
-        axis='x'
-        lockAxis='x'
-        items={this.props.palette}
-        colorPalette={this.props.colorPalette}
-        onSortEnd={this.onSortEnd}
-      />
-    )
-  }
-}
-
-export class ColorPalette extends Component<{colorPalette: Rgb[]}> {
-  render () {
-    const items = fp.mkArray(16, i => i)
-    return (
-      <div style={{
-        display: 'flex',
-        flexDirection: 'row'
-      }}>
-        {items.map((value,idx) => {
-          return (
-            <ColorBlock
-              key={idx}
-              color={value}
-              hover={false}
-              colorPalette={this.props.colorPalette}
-            />
-          )
-        })}
-      </div>
-    )
-  }
-}
-
 interface ColorPickerProps {
   scale: { scaleX: number, scaleY: number };
-  paletteRemap: number[];
   colorPalette: Rgb[];
   selected: number;
   twoRows: boolean;
+  /** Optional subset/reorder of color indices to display (e.g. for import bg picker). */
+  colorIndices?: number[];
 
   onSelectColor: (idx: number) => void;
 }
 
 export default class ColorPicker extends Component<ColorPickerProps> {
   static defaultProps = {
-    paletteRemap: fp.mkArray(16, i => i),
     twoRows: false,
     scale: { scaleX:1, scaleY:1 }
   }
@@ -116,7 +27,8 @@ export default class ColorPicker extends Component<ColorPickerProps> {
     const h = Math.floor(scaleY * 4 * 8) + 2*2
     const blockWidth = (w / 8) - 4
     const blockHeight = blockWidth
-    const colors = this.props.paletteRemap.map((idx) => {
+    const indices = this.props.colorIndices ?? [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15];
+    const colors = indices.map((idx) => {
       const c = this.props.colorPalette[idx]
       const bg = utils.rgbToCssRgb(c)
       const style = {

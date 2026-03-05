@@ -32,6 +32,7 @@ export function framebufFromJson(c: any): Framebuf {
     extBgColor1: c.extBgColor1 ?? undefined,
     extBgColor2: c.extBgColor2 ?? undefined,
     extBgColor3: c.extBgColor3 ?? undefined,
+    paletteId: c.paletteId ?? undefined,
   }
 }
 

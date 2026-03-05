@@ -47,6 +47,9 @@ export function saveSDD(fb: FramebufWithFont): string {
   }
 
   lines.push(`            <Description>${name ?? 'Screen'}</Description>`);
+  if (fb.paletteId) {
+    lines.push(`            <PaletteId>${fb.paletteId}</PaletteId>`);
+  }
   lines.push('        </Screen>');
   lines.push('    </Screens>');
   lines.push('</ScreenDesignerData>');

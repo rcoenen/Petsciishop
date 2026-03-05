@@ -5,7 +5,7 @@ import { ActionCreators } from 'redux-undo';
 
 import * as selectors from './selectors'
 import {
-  getSettingsCurrentColorPalette
+  getEffectiveColorPalette
 } from '../redux/settingsSelectors'
 
 import {
@@ -164,7 +164,7 @@ export const actions = {
           font
         }
       })
-      const palette = getSettingsCurrentColorPalette(state)
+      const palette = getEffectiveColorPalette(state, selectedFramebufIndex)
       const amendedFormatOptions: FileFormat = {
         ...fmt,
         commonExportParams: {

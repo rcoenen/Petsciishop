@@ -1,6 +1,7 @@
 
 import { RootState, Settings, PaletteName } from './types'
-import { colorPalettes } from '../utils'
+import { colorPalettes, getColorPaletteById } from '../utils/palette'
+import * as selectors from './selectors'
 
 export function getSettings(state: RootState): Settings {
   return state.settings['saved']
@@ -10,17 +11,9 @@ export const getSettingsEditing = (state: RootState) => {
   return state.settings['editing']
 }
 
-export const getSettingsPaletteRemap = (state: RootState) => {
-  const idx = state.toolbar.selectedPaletteRemap
-  const palettes = getSettings(state).palettes
-  if (idx >= palettes.length) {
-    throw new Error(`trying to use an undefined palette idx=${idx}`);
-  }
-  return palettes[idx]
-}
 
 export const getSettingsColorPaletteByName = (_state: RootState, name: PaletteName) => {
-  return colorPalettes[name];
+  return getColorPaletteById(name);
 }
 
 export const getSettingsCurrentColorPalette = (state: RootState) => {
@@ -43,3 +36,18 @@ export const getSettingsEditingCurrentColorPalette = (state: RootState) => {
   return getSettingsColorPaletteByName(state, settings.selectedColorPalette)
 }
 
+/** Per-screen palette id, falling back to global setting. */
+export const getEffectivePaletteId = (state: RootState, framebufIndex: number | null): string => {
+  if (framebufIndex !== null) {
+    const fb = selectors.getFramebufByIndex(state, framebufIndex);
+    if (fb?.paletteId) {
+      return fb.paletteId;
+    }
+  }
+  return getSettings(state).selectedColorPalette;
+}
+
+/** Per-screen Rgb[] palette, falling back to global setting. */
+export const getEffectiveColorPalette = (state: RootState, framebufIndex: number | null) => {
+  return getColorPaletteById(getEffectivePaletteId(state, framebufIndex));
+}

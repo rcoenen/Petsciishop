@@ -18,7 +18,8 @@ import { pickAndReadFile } from '../utils/webPlatform';
 
 import * as png2pet from '../utils/importers/png2petscii'
 import { DEFAULT_BACKGROUND_COLOR, DEFAULT_BORDER_COLOR } from '../redux/editor';
-import { getSettingsCurrentColorPalette } from '../redux/settingsSelectors';
+import { getEffectiveColorPalette } from '../redux/settingsSelectors';
+import * as screensSelectors from '../redux/screensSelectors';
 import ColorPicker from '../components/ColorPicker';
 
 import styles from './ImportModal.module.css'
@@ -272,7 +273,7 @@ class ImportModal_ extends Component<ImportModalProps & ImportModalDispatch, Imp
                       <Text>This image can be converted to any of the following background colors.  Pick one:</Text>
                       <ColorPicker
                         scale={{scaleX:1, scaleY:1}}
-                        paletteRemap={matchedBackgroundColors}
+                        colorIndices={matchedBackgroundColors}
                         colorPalette={this.props.currentColorPalette}
                         selected={selectedBackground}
                         twoRows={false}
@@ -312,7 +313,7 @@ export default connect(
   (state: RootState) => {
     return {
       showImport: state.toolbar.showImport,
-      currentColorPalette: getSettingsCurrentColorPalette(state),
+      currentColorPalette: getEffectiveColorPalette(state, screensSelectors.getCurrentScreenFramebufIndex(state)),
       colorPalettes: getAllRgbPalettes()
     }
   },

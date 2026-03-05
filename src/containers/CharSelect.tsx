@@ -19,7 +19,7 @@ import * as fp from '../utils/fp'
 import * as selectors from '../redux/selectors'
 import * as screensSelectors from '../redux/screensSelectors'
 import {
-  getSettingsCurrentColorPalette
+  getEffectiveColorPalette
 } from '../redux/settingsSelectors'
 import { ecmScreencode } from '../utils/ecm'
 
@@ -353,15 +353,16 @@ const mapStateToProps = (state: RootState) => {
       font,
       state.toolbar.charTransform
     );
+  const framebufIndex = screensSelectors.getCurrentScreenFramebufIndex(state);
   return {
-    framebufIndex: screensSelectors.getCurrentScreenFramebufIndex(state),
+    framebufIndex,
     backgroundColor: framebuf ? framebuf.backgroundColor : framebuffer.DEFAULT_BACKGROUND_COLOR,
     selected,
     textColor: state.toolbar.textColor,
     charset,
     font,
     customFonts: selectors.getCustomFonts(state),
-    colorPalette: getSettingsCurrentColorPalette(state),
+    colorPalette: getEffectiveColorPalette(state, framebufIndex),
     ecmMode: framebuf?.ecmMode ?? false,
     extBgColor1: framebuf?.extBgColor1 ?? 0,
     extBgColor2: framebuf?.extBgColor2 ?? 0,

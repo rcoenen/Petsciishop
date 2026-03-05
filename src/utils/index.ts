@@ -188,6 +188,9 @@ const framebufFields = (framebuf: Framebuf) => {
     fields.extBgColor2 = framebuf.extBgColor2;
     fields.extBgColor3 = framebuf.extBgColor3;
   }
+  if (framebuf.paletteId) {
+    fields.paletteId = framebuf.paletteId;
+  }
   return fields;
 }
 

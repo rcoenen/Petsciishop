@@ -56,6 +56,7 @@ const SET_NAME = 'Framebuffer/SET_NAME'
 const SET_DIMS = 'Framebuffer/SET_DIMS'
 const SET_ECM_MODE = 'Framebuffer/SET_ECM_MODE'
 const SET_EXT_BG_COLOR = 'Framebuffer/SET_EXT_BG_COLOR'
+const SET_PALETTE_ID = 'Framebuffer/SET_PALETTE_ID'
 
 const actionCreators = {
   setPixel: (data: SetCharParams, undoId: number|null, framebufIndex: number) => createFbAction(SET_PIXEL, framebufIndex, undoId, data),
@@ -76,6 +77,7 @@ const actionCreators = {
 
   setEcmMode: (data: boolean, framebufIndex: number) => createFbAction(SET_ECM_MODE, framebufIndex, null, data),
   setExtBgColor: (data: { index: 1|2|3, color: number }, framebufIndex: number) => createFbAction(SET_EXT_BG_COLOR, framebufIndex, null, data),
+  setPaletteId: (data: string|undefined, framebufIndex: number) => createFbAction(SET_PALETTE_ID, framebufIndex, null, data),
 };
 
 export const actions = actionCreators;
@@ -193,7 +195,8 @@ export function fbReducer(state: Framebuf = {
   ecmMode: false,
   extBgColor1: 0,
   extBgColor2: 0,
-  extBgColor3: 0
+  extBgColor3: 0,
+  paletteId: undefined
 }, action: Actions): Framebuf {
   switch (action.type) {
     case SET_PIXEL:
@@ -230,7 +233,8 @@ export function fbReducer(state: Framebuf = {
         ecmMode: c.ecmMode ?? false,
         extBgColor1: c.extBgColor1 ?? 0,
         extBgColor2: c.extBgColor2 ?? 0,
-        extBgColor3: c.extBgColor3 ?? 0
+        extBgColor3: c.extBgColor3 ?? 0,
+        paletteId: c.paletteId ?? undefined
       }
     case SET_BACKGROUND_COLOR:
       return updateField(state, 'backgroundColor', action.data);
@@ -249,6 +253,8 @@ export function fbReducer(state: Framebuf = {
         if (index === 3) return updateField(state, 'extBgColor3', color);
         return state;
       }
+    case SET_PALETTE_ID:
+      return updateField(state, 'paletteId', action.data);
     case SET_DIMS: {
         const { width, height } = action.data;
         return {

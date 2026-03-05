@@ -14,7 +14,7 @@ import * as framebuf from '../redux/editor';
 import * as toolbar from '../redux/toolbar';
 import * as selectors from '../redux/selectors'
 import * as screensSelectors from '../redux/screensSelectors'
-import { getSettingsPaletteRemap, getSettingsCurrentColorPalette } from '../redux/settingsSelectors'
+import { getEffectiveColorPalette } from '../redux/settingsSelectors'
 import * as Root from '../redux/root'
 import { framebufIndexMergeProps } from '../redux/utils'
 import { Tool, Rgb, RootState, FramebufUIState } from '../redux/types';
@@ -89,7 +89,7 @@ interface FbColorPickerProps {
   active: boolean;
   fadeOut: boolean;
   colorPalette: Rgb[];
-  paletteRemap: number[];
+
   color: number;
   tooltip: string;
 
@@ -124,7 +124,7 @@ class FbColorPicker_ extends PureComponent<FbColorPickerProps> {
         >
           <ColorPicker
             onSelectColor={this.handleSelectColor}
-            paletteRemap={this.props.paletteRemap}
+  
             colorPalette={colorPalette}
             selected={this.props.color}
             scale={{scaleX:1.5, scaleY:1.5}}
@@ -238,7 +238,7 @@ interface ToolbarSelectorProps {
   selectedTool: Tool;
   backgroundColor: number | null;
   borderColor: number | null;
-  paletteRemap: number[];
+
   colorPalette: Rgb[];
   canvasFit: FramebufUIState['canvasFit'];
   ecmMode: boolean;
@@ -393,7 +393,7 @@ class ToolbarView extends Component<
           color={this.props.borderColor!}
           onSetActive={this.setPickerActive}
           onSelectColor={this.handleSelectBorderColor}
-          paletteRemap={this.props.paletteRemap}
+
           colorPalette={this.props.colorPalette}
           tooltip='Border'
         />
@@ -404,7 +404,7 @@ class ToolbarView extends Component<
           color={this.props.backgroundColor}
           onSetActive={this.setPickerActive}
           onSelectColor={this.handleSelectBgColor}
-          paletteRemap={this.props.paletteRemap}
+
           colorPalette={this.props.colorPalette}
           tooltip='Background'
         />
@@ -418,7 +418,7 @@ class ToolbarView extends Component<
               color={this.props.extBgColor1}
               onSetActive={this.setPickerActive}
               onSelectColor={this.handleSelectExtBgColor(1)}
-              paletteRemap={this.props.paletteRemap}
+    
               colorPalette={this.props.colorPalette}
               tooltip='Bg 1'
             />
@@ -429,7 +429,7 @@ class ToolbarView extends Component<
               color={this.props.extBgColor2}
               onSetActive={this.setPickerActive}
               onSelectColor={this.handleSelectExtBgColor(2)}
-              paletteRemap={this.props.paletteRemap}
+    
               colorPalette={this.props.colorPalette}
               tooltip='Bg 2'
             />
@@ -440,7 +440,7 @@ class ToolbarView extends Component<
               color={this.props.extBgColor3}
               onSetActive={this.setPickerActive}
               onSelectColor={this.handleSelectExtBgColor(3)}
-              paletteRemap={this.props.paletteRemap}
+    
               colorPalette={this.props.colorPalette}
               tooltip='Bg 3'
             />
@@ -504,8 +504,7 @@ const mapStateToProps = (state: RootState): ToolbarSelectorProps => {
     backgroundColor: fp.maybe(framebuf, null, fb => fb.backgroundColor),
     borderColor:     fp.maybe(framebuf, null, fb => fb.borderColor),
     selectedTool:    state.toolbar.selectedTool,
-    paletteRemap:    getSettingsPaletteRemap(state),
-    colorPalette:    getSettingsCurrentColorPalette(state),
+    colorPalette:    getEffectiveColorPalette(state, framebufIndex),
     canvasFit,
     ecmMode:      fp.maybe(framebuf, false, fb => fb.ecmMode ?? false),
     extBgColor1:  fp.maybe(framebuf, 0, fb => fb.extBgColor1 ?? 0),

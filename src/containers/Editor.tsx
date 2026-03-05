@@ -17,11 +17,12 @@ import { Framebuffer } from '../redux/editor'
 import * as selectors from '../redux/selectors'
 import * as screensSelectors from '../redux/screensSelectors'
 import {
-  getSettingsPaletteRemap,
-  getSettingsCurrentColorPalette,
   getSettingsIntegerScale,
-  getSettingsCrtFilter
+  getSettingsCrtFilter,
+  getEffectiveColorPalette,
+  getEffectivePaletteId
 } from '../redux/settingsSelectors'
+import { C64_PALETTES } from '../utils/c64Palettes'
 
 
 import { framebufIndexMergeProps }  from '../redux/utils'
@@ -843,7 +844,7 @@ const FramebufferCont = connect(
       altKey: state.toolbar.altKey,
       spacebarKey: state.toolbar.spacebarKey,
       font,
-      colorPalette: getSettingsCurrentColorPalette(state),
+      colorPalette: getEffectiveColorPalette(state, framebufIndex),
       canvasGrid: state.toolbar.canvasGrid
     }
   },
@@ -859,9 +860,10 @@ const FramebufferCont = connect(
 interface EditorProps {
   framebuf: Framebuf | null;
   framebufUIState: FramebufUIState | undefined;
+  framebufIndex: number | null;
   textColor: number;
   colorPalette: Rgb[];
-  paletteRemap: number[];
+  paletteId: string;
   selectedTool: Tool;
   crtFilter: CrtFilter;
 
@@ -871,6 +873,7 @@ interface EditorProps {
 
 interface EditorDispatch {
   Toolbar: toolbar.PropsFromDispatch;
+  setPaletteId: (paletteId: string | undefined, framebufIndex: number) => void;
 }
 
 class Editor extends Component<EditorProps & EditorDispatch> {
@@ -881,6 +884,12 @@ class Editor extends Component<EditorProps & EditorDispatch> {
 
   handleSetColor = (color: number) => {
     this.props.Toolbar.setCurrentColor(color)
+  }
+
+  handleSetPalette = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (this.props.framebufIndex !== null) {
+      this.props.setPaletteId(e.target.value || undefined, this.props.framebufIndex);
+    }
   }
 
   handleCharPosChanged = (args: { isActive: boolean, charPos: Coord2 }) => {
@@ -958,12 +967,31 @@ class Editor extends Component<EditorProps & EditorDispatch> {
           <div style={{marginBottom: '10px'}}>
             <ColorPicker
               selected={this.props.textColor}
-              paletteRemap={this.props.paletteRemap}
               colorPalette={colorPalette}
               onSelectColor={this.handleSetColor}
               twoRows={true}
               scale={{scaleX, scaleY}}
             />
+            <div style={{marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px'}}>
+              <span style={{fontSize: '0.75em', color: 'rgb(160,160,160)'}}>Palette:</span>
+              <select
+                value={this.props.paletteId}
+                onChange={this.handleSetPalette}
+                style={{
+                  flex: 1,
+                  fontSize: '0.75em',
+                  backgroundColor: 'rgb(40,40,40)',
+                  color: '#ccc',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: '3px',
+                  padding: '2px 4px',
+                }}
+              >
+                {C64_PALETTES.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <CharSelect canvasScale={{scaleX, scaleY}}/>
         </div>
@@ -978,10 +1006,11 @@ export default connect(
     const framebufIndex = screensSelectors.getCurrentScreenFramebufIndex(state);
     return {
       framebuf,
+      framebufIndex,
       textColor: state.toolbar.textColor,
       selectedTool: state.toolbar.selectedTool,
-      paletteRemap: getSettingsPaletteRemap(state),
-      colorPalette: getSettingsCurrentColorPalette(state),
+      colorPalette: getEffectiveColorPalette(state, framebufIndex),
+      paletteId: getEffectivePaletteId(state, framebufIndex),
       integerScale: getSettingsIntegerScale(state),
       crtFilter: getSettingsCrtFilter(state),
       framebufUIState: selectors.getFramebufUIState(state, framebufIndex)
@@ -989,7 +1018,9 @@ export default connect(
   },
   dispatch => {
     return {
-      Toolbar: Toolbar.bindDispatch(dispatch)
+      Toolbar: Toolbar.bindDispatch(dispatch),
+      setPaletteId: (paletteId: string | undefined, framebufIndex: number) =>
+        dispatch(Framebuffer.actions.setPaletteId(paletteId, framebufIndex)),
     }
   }
 )(Editor)

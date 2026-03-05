@@ -21,6 +21,7 @@ export function loadSDD(content: string): Framebuf[] {
     const d022El = screenEl.querySelector('D022Colour');
     const d023El = screenEl.querySelector('D023Colour');
     const d024El = screenEl.querySelector('D024Colour');
+    const paletteIdEl = screenEl.querySelector('PaletteId');
 
     const backgroundColor = bgEl ? parseInt(bgEl.textContent ?? '6') : 6;
     const borderColor = borderEl ? parseInt(borderEl.textContent ?? '14') : 14;
@@ -28,6 +29,7 @@ export function loadSDD(content: string): Framebuf[] {
     const extBgColor1 = d022El ? parseInt(d022El.textContent ?? '0') : 0;
     const extBgColor2 = d023El ? parseInt(d023El.textContent ?? '0') : 0;
     const extBgColor3 = d024El ? parseInt(d024El.textContent ?? '0') : 0;
+    const paletteId = paletteIdEl?.textContent?.trim() || undefined;
 
     const rowEls = screenEl.querySelectorAll('RowData');
     const pixels: { code: number; color: number }[][] = [];
@@ -67,6 +69,9 @@ export function loadSDD(content: string): Framebuf[] {
       fbData.extBgColor1 = extBgColor1;
       fbData.extBgColor2 = extBgColor2;
       fbData.extBgColor3 = extBgColor3;
+    }
+    if (paletteId) {
+      fbData.paletteId = paletteId;
     }
     framebufs.push(framebufFromJson(fbData));
   });

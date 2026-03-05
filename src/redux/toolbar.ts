@@ -7,9 +7,6 @@ import { Toolbar as IToolbar, Transform, RootStateThunk, Coord2, Pixel, BrushReg
 
 import * as selectors from './selectors'
 import * as screensSelectors from '../redux/screensSelectors'
-import {
-  getSettingsPaletteRemap
-} from '../redux/settingsSelectors'
 import * as utils from '../utils'
 import * as brush from './brush'
 import { ActionsUnion, createAction, updateField, DispatchPropsFromActions } from './typeUtils'
@@ -152,7 +149,7 @@ const actionCreators = {
   resetBrush: () => createAction(RESET_BRUSH),
   setSelectedChar: (coord: Coord2) => createAction(SET_SELECTED_CHAR, coord),
   nextCharcodeAction: (dir: Coord2, font: Font) => createAction(NEXT_CHARCODE, { dir, font }),
-  nextColorAction: (dir: number, paletteRemap: number[]) => createAction(NEXT_COLOR, { dir, paletteRemap }),
+  nextColorAction: (dir: number) => createAction(NEXT_COLOR, { dir }),
   invertCharAction: (font: Font) => createAction(INVERT_CHAR, font),
   clearModKeyState: () => createAction(CLEAR_MOD_KEY_STATE),
   captureBrush,
@@ -466,9 +463,8 @@ export class Toolbar {
     },
 
     nextColor: (dir: number): RootStateThunk => {
-      return (dispatch, getState) => {
-        const state = getState()
-        dispatch(actionCreators.nextColorAction(dir, getSettingsPaletteRemap(state)));
+      return (dispatch) => {
+        dispatch(actionCreators.nextColorAction(dir));
       }
     },
 
@@ -565,7 +561,6 @@ export class Toolbar {
       showExport: { show: false },
       showImport: { show: false },
       showImageConverter: false,
-      selectedPaletteRemap: 0,
       canvasGrid: false,
       previewGrid: false,
       showColorModeLabels: true,
@@ -615,13 +610,11 @@ export class Toolbar {
         }
       }
       case NEXT_COLOR: {
-        const remap = action.data.paletteRemap;
-        const idx = remap.indexOf(state.textColor);
         const dir = action.data.dir;
-        const nextIdx = Math.max(0, Math.min(15, idx + dir));
+        const nextIdx = Math.max(0, Math.min(15, state.textColor + dir));
         return {
           ...state,
-          textColor: remap[nextIdx]
+          textColor: nextIdx
         }
       }
       case INC_UNDO_ID:
@@ -700,8 +693,6 @@ export class Toolbar {
         return updateField(state, 'showImport', action.data);
       case 'Toolbar/SET_SHOW_IMAGE_CONVERTER':
         return updateField(state, 'showImageConverter', action.data);
-      case 'Toolbar/SET_SELECTED_PALETTE_REMAP':
-        return updateField(state, 'selectedPaletteRemap', action.data);
       case 'Toolbar/SET_CANVAS_GRID':
         return updateField(state, 'canvasGrid', action.data);
       case 'Toolbar/SET_PREVIEW_GRID':

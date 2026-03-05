@@ -35,6 +35,7 @@ export interface Framebuf {
   readonly extBgColor1?: number;  // $D022
   readonly extBgColor2?: number;  // $D023
   readonly extBgColor3?: number;  // $D024
+  readonly paletteId?: string;
 };
 
 // This is the basically the same as the redux Framebuf except
@@ -68,7 +69,7 @@ export type Brush = any;
 
 export type CrtFilter = 'none' | 'scanlines' | 'colorTv' | 'bwTv';
 
-export type PaletteName = 'petmate' | 'colodore' | 'pepto' | 'vice';
+export type PaletteName = string;
 
 export type EditBranch = 'saved' | 'editing';
 
@@ -77,7 +78,6 @@ export type EditSaved<T> = {
 };
 
 export interface Settings {
-  palettes: number[][];
   selectedColorPalette: PaletteName;
   integerScale: boolean;
   crtFilter: CrtFilter;
@@ -126,7 +126,6 @@ export interface Toolbar {
   showExport: { show: boolean, fmt?: FileFormat}; // fmt undefined only when show=false
   showImport: { show: boolean, fmt?: FileFormat}; // fmt undefined only when show=false
   showImageConverter: boolean;
-  selectedPaletteRemap: number;
   canvasGrid: boolean;
   previewGrid: boolean;
   showColorModeLabels: boolean;

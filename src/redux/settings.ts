@@ -16,7 +16,6 @@ import { ActionsUnion, DispatchPropsFromActions, createAction } from './typeUtil
 import * as fp from '../utils/fp'
 
 const LOAD = 'LOAD'
-const SET_PALETTE = 'SET_PALETTE'
 const SAVE_EDITS = 'SAVE_EDITS'
 const CANCEL_EDITS = 'CANCEL_EDITS'
 const SET_SELECTED_COLOR_PALETTE = 'SET_SELECTED_COLOR_PALETTE'
@@ -26,7 +25,6 @@ const SET_CRT_FILTER = 'SET_CRT_FILTER'
 //const CONFIG_FILE_VERSION = 1
 
 const initialState: RSettings = {
-  palettes: fp.mkArray(4, () => fp.mkArray(16, i => i)),
   selectedColorPalette: 'petmate',
   integerScale: false,
   crtFilter: 'none' as CrtFilter
@@ -42,6 +40,12 @@ function saveSettings(settings: RSettings) {
   }
 }
 
+/** Migrate legacy palette names to canonical c64Palettes ids. */
+function normalizePaletteId(name: string): string {
+  if (name === 'pepto') return 'pepto-pal';
+  return name;
+}
+
 // Load settings from a JSON doc.  Handle version upgrades.
 function fromJson(json: SettingsJson): RSettings {
   let version = undefined
@@ -53,8 +57,7 @@ function fromJson(json: SettingsJson): RSettings {
   }
   const init = initialState
   return {
-    palettes: json.palettes === undefined ? init.palettes : json.palettes,
-    selectedColorPalette: json.selectedColorPalette === undefined ? init.selectedColorPalette : json.selectedColorPalette,
+    selectedColorPalette: json.selectedColorPalette === undefined ? init.selectedColorPalette : normalizePaletteId(json.selectedColorPalette),
     integerScale: fp.maybeDefault(json.integerScale, false),
     crtFilter: fp.maybeDefault(json.crtFilter, 'none')
   }
@@ -74,11 +77,6 @@ interface BranchArgs {
   branch: EditBranch;
 }
 
-interface SetPaletteArgs extends BranchArgs {
-  idx: number;
-  palette: number[];
-}
-
 interface SetSelectedColorPaletteNameArgs extends BranchArgs {
   name: PaletteName;
 }
@@ -95,7 +93,6 @@ const actionCreators = {
   load: (data: SettingsJson) => createAction(LOAD, fromJson(data)),
   saveEditsAction: () => createAction(SAVE_EDITS),
   cancelEdits: () => createAction(CANCEL_EDITS),
-  setPalette: (data: SetPaletteArgs) => createAction(SET_PALETTE, data),
   setSelectedColorPaletteName: (data: SetSelectedColorPaletteNameArgs) => createAction(SET_SELECTED_COLOR_PALETTE, data),
   setIntegerScale: (data: SetIntegerScaleArgs) => createAction(SET_INTEGER_SCALE, data),
   setCrtFilter: (data: SetCrtFilterArgs) => createAction(SET_CRT_FILTER, data)
@@ -149,11 +146,6 @@ export function reducer(
         ...state,
         editing: state.saved
       }
-    case SET_PALETTE:
-      const branch: EditBranch = action.data.branch;
-      return updateBranch(state, action.data.branch, {
-        palettes: fp.arraySet(state[branch].palettes, action.data.idx, action.data.palette)
-      });
     case SET_INTEGER_SCALE: {
       return updateBranch(state, action.data.branch, {
         integerScale: action.data.scale
