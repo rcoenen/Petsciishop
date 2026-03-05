@@ -294,6 +294,11 @@ class FramebufTab extends PureComponent<FramebufTabProps> {
                 framebuf={framebuf}
                 font={font}
                 colorPalette={colorPalette}
+                ecmMode={this.props.framebuf.ecmMode}
+                backgroundColorIndex={backgroundColor}
+                extBgColor1={this.props.framebuf.extBgColor1}
+                extBgColor2={this.props.framebuf.extBgColor2}
+                extBgColor3={this.props.framebuf.extBgColor3}
               />
             </div>
           </div>
