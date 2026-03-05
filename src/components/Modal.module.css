@@ -10,7 +10,8 @@
 }
 
 .modal {
-  height: 80vh;
+  max-height: 80vh;
+  overflow-y: auto;
   margin: 0px 0px 0px 0px;
 
   border-radius: 5px;
