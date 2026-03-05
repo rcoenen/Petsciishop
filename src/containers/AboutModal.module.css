@@ -1,3 +1,9 @@
+.logo {
+  width: 100%;
+  image-rendering: pixelated;
+  border-radius: 4px;
+}
+
 .container {
   display: flex;
   flex-direction: column;
@@ -7,10 +13,21 @@
   max-width: 420px;
 }
 
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
 .title {
   margin: 0;
   font-size: 1.4rem;
   color: #fff;
+}
+
+.version {
+  font-size: 13px;
+  color: #888;
 }
 
 .tagline {

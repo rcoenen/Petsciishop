@@ -1,6 +1,6 @@
 {
   "name": "petsciishop",
-  "version": "0.8.4",
+  "version": "0.1.0",
   "description": "Petsciishop - a web-based C64 PETSCII graphics editor",
   "private": false,
   "author": "rcoenen <rcoenen@users.noreply.github.com>",

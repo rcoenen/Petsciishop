@@ -5,6 +5,7 @@ import { RootState } from '../redux/types';
 import Modal from '../components/Modal';
 import styles from './AboutModal.module.css';
 import buildInfo from '../../build.json';
+import pkg from '../../package.json';
 
 interface Props {
   show: boolean;
@@ -15,7 +16,11 @@ function AboutModal({ show, onClose }: Props) {
   return (
     <Modal showModal={show}>
       <div className={styles.container}>
-        <h2 className={styles.title}>Petsciishop</h2>
+        <img src='/assets/petsciishop_logo.png' alt='Petsciishop' className={styles.logo} />
+        <div className={styles.titleRow}>
+          <h2 className={styles.title}>Petsciishop</h2>
+          <span className={styles.version}>Release {pkg.version}</span>
+        </div>
         <p className={styles.tagline}>A web-based C64 PETSCII graphics editor</p>
         <p className={styles.body}>
           Drawing tools, export formats, image conversion, multi-screen
