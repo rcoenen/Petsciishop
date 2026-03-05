@@ -8,7 +8,7 @@ Petsciishop is our attempt to take the best ideas from across the C64 community,
 
 ### Highlights
 - 🖼️ **Best-in-class image-to-PETSCII converter** — original research into perceptual color matching and character optimization
-- 🌐 **100% web-based** — no install, no Electron, just open the URL
+- 🌐 **100% web-based** — nothing to install, no platform restrictions, just open the URL and go
 - 🔓 **Open source** — the ultimate PETSCII editor, built for everyone
 
 **Try it now:** [https://rcoenen.github.io/Petsciishop/](https://rcoenen.github.io/Petsciishop/)
