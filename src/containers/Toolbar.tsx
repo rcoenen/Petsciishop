@@ -22,7 +22,7 @@ import { Tool, Rgb, RootState, FramebufUIState } from '../redux/types';
 import { withHoverFade } from './hoc'
 
 import {
-  faBrush, faPencilAlt, faFont, faUndo, faRedo, faBroom, faCog, faArrowsAlt
+  faBrush, faPencilAlt, faFont, faUndo, faRedo, faBroom, faArrowsAlt
 } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 
@@ -427,10 +427,6 @@ class ToolbarView extends Component<
           />
         )}
 
-        <Icon
-          bottom={true}
-          onIconClick={() => this.props.Toolbar.setShowSettings(true)}
-          iconName={faCog} tooltip='Preferences'/>
       </div>
     )
   }

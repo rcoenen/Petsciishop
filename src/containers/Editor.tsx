@@ -400,6 +400,7 @@ class FramebufferView extends Component<FramebufferViewProps & FramebufferViewDi
     if (this.props.selectedTool === Tool.Inspector) {
       const { charPos } = this.currentCharPos(e);
       this.altClick(charPos);
+      this.props.Toolbar.setSelectedTool(Tool.Draw);
       return;
     }
     if (this.props.selectedTool == Tool.PanZoom ||

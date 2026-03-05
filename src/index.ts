@@ -4,11 +4,13 @@ import Root from './containers/Root';
 import './app.global.css';
 
 import { loadSettings } from './utils';
+import { loadSDD } from './utils/importers';
 import * as selectors from './redux/selectors';
 import * as Screens from './redux/screens';
 import * as settings from './redux/settings';
 import * as ReduxRoot from './redux/root';
 import { Toolbar } from './redux/toolbar';
+import { Tool } from './redux/types';
 
 import configureStore from './store/configureStore';
 import { loadAssets } from './utils/assetLoader';
@@ -31,7 +33,14 @@ async function main() {
       dispatch(Screens.actions.newScreen());
     }
   } else {
-    dispatch(Screens.actions.newScreen());
+    try {
+      const text = await fetch('/demo/Petscii_logo_std.sdd').then(r => r.text());
+      const framebufs = loadSDD(text);
+      dispatch(ReduxRoot.actions.importFramebufsAppend(framebufs));
+    } catch {
+      dispatch(Screens.actions.newScreen());
+    }
+    dispatch(Toolbar.actions.setSelectedTool(Tool.Inspector));
   }
   dispatch(ReduxRoot.actions.updateLastSavedSnapshot());
   loadSettings((j: any) => dispatch(settings.actions.load(j)));

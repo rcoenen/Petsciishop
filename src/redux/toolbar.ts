@@ -172,6 +172,7 @@ const actionCreators = {
   setShiftKey: (flag: boolean) => createAction('Toolbar/SET_SHIFT_KEY', flag),
   setSpacebarKey: (flag: boolean) => createAction('Toolbar/SET_SPACEBAR_KEY', flag),
   setShowAbout: (flag: boolean) => createAction('Toolbar/SET_SHOW_ABOUT', flag),
+  setShowResetConfirm: (flag: boolean) => createAction('Toolbar/SET_SHOW_RESET_CONFIRM', flag),
   setShowSettings: (flag: boolean) => createAction('Toolbar/SET_SHOW_SETTINGS', flag),
   setShowCustomFonts: (flag: boolean) => createAction('Toolbar/SET_SHOW_CUSTOM_FONTS', flag),
   setShowExport: (show: {show:boolean, fmt?:FileFormat}) => createAction('Toolbar/SET_SHOW_EXPORT', show),
@@ -559,6 +560,7 @@ export class Toolbar {
       shiftKey: false,
       spacebarKey: false,
       showAbout: false,
+      showResetConfirm: false,
       showSettings: false,
       showCustomFonts: false,
       showExport: { show: false },
@@ -686,6 +688,8 @@ export class Toolbar {
         return updateField(state, 'spacebarKey', action.data);
       case 'Toolbar/SET_SHOW_ABOUT':
         return updateField(state, 'showAbout', action.data);
+      case 'Toolbar/SET_SHOW_RESET_CONFIRM':
+        return updateField(state, 'showResetConfirm', action.data);
       case 'Toolbar/SET_SHOW_SETTINGS':
         return updateField(state, 'showSettings', action.data);
       case 'Toolbar/SET_SHOW_CUSTOM_FONTS':

@@ -50,7 +50,9 @@ const menuDefs: Array<{ label: string; items: ItemDef[] }> = [
     items: [
       { label: 'About Petsciishop', cmd: 'about' },
       { separator: true },
-      { label: 'Preferences', cmd: 'preferences', accelerator: 'Ctrl+P' },
+      { label: 'Demo', submenu: [
+        { label: 'Petsciishop Logo', cmd: 'load-demo-logo' },
+      ]},
     ],
   },
   {
@@ -85,6 +87,8 @@ const menuDefs: Array<{ label: string; items: ItemDef[] }> = [
     items: [
       { label: 'GitHub',         href: 'https://github.com/rcoenen/Petsciishop' },
       { label: 'Search Issues',  href: 'https://github.com/rcoenen/Petsciishop/issues' },
+      { separator: true },
+      { label: 'Reset Workspace...', cmd: 'reset-workspace' },
     ],
   },
 ];

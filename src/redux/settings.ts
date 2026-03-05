@@ -25,7 +25,7 @@ const SET_CRT_FILTER = 'SET_CRT_FILTER'
 //const CONFIG_FILE_VERSION = 1
 
 const initialState: RSettings = {
-  selectedColorPalette: 'petmate',
+  selectedColorPalette: 'colodore',
   integerScale: false,
   crtFilter: 'none' as CrtFilter
 }

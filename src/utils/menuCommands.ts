@@ -1,4 +1,5 @@
 import { formats, promptProceedWithUnsavedChanges } from './index';
+import { loadSDD } from './importers';
 import * as Screens from '../redux/screens';
 import * as ReduxRoot from '../redux/root';
 import { Toolbar } from '../redux/toolbar';
@@ -97,6 +98,14 @@ export function dispatchMenuCommand(
     case 'import-sdd':
       dispatch(ReduxRoot.actions.fileImportAppend(formats.sdd));
       return;
+    case 'load-demo-logo':
+      fetch('/demo/Petscii_logo_std.sdd')
+        .then(r => r.text())
+        .then(text => {
+          const framebufs = loadSDD(text);
+          dispatch(ReduxRoot.actions.importFramebufsAppend(framebufs));
+        });
+      return;
     case 'preferences':
       dispatch(Toolbar.actions.setShowSettings(true));
       return;
@@ -143,6 +152,9 @@ export function dispatchMenuCommand(
       return;
     case 'set-mode-ecm':
       dispatch(Toolbar.actions.setCurrentScreenEcmMode(true));
+      return;
+    case 'reset-workspace':
+      dispatch(Toolbar.actions.setShowResetConfirm(true));
       return;
     default:
       console.warn('unknown menu command:', command);
