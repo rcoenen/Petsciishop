@@ -4,7 +4,6 @@ import Root from './containers/Root';
 import './app.global.css';
 
 import { loadSettings } from './utils';
-import { showConfirm } from './utils/dialog';
 import * as selectors from './redux/selectors';
 import * as Screens from './redux/screens';
 import * as settings from './redux/settings';
@@ -21,22 +20,13 @@ async function main() {
   const store = configureStore();
   const dispatch = store.dispatch as any;
 
-  // Offer to restore auto-saved workspace if one exists
+  // Always restore auto-saved workspace if one exists
   const saved = loadAutoSave();
   if (saved) {
-    const restore = await showConfirm('A previous session was auto-saved. Restore it?', {
-      okLabel: 'Restore',
-      cancelLabel: 'Discard',
-    });
-    if (restore) {
-      try {
-        const data = JSON.parse(saved);
-        dispatch(ReduxRoot.actions.openWorkspace(data));
-      } catch {
-        dispatch(Screens.actions.newScreen());
-      }
-    } else {
-      clearAutoSave();
+    try {
+      const data = JSON.parse(saved);
+      dispatch(ReduxRoot.actions.openWorkspace(data));
+    } catch {
       dispatch(Screens.actions.newScreen());
     }
   } else {
@@ -46,7 +36,7 @@ async function main() {
   loadSettings((j: any) => dispatch(settings.actions.load(j)));
 
   // Periodic auto-save
-  startAutoSave(store.getState as any);
+  startAutoSave(store.getState as any, store.subscribe);
 
   const container = document.getElementById('root');
   if (!container) throw new Error('Missing #root element');
@@ -63,12 +53,6 @@ async function main() {
     store.dispatch(Toolbar.actions.clearModKeyState());
   });
 
-  // Warn before closing with unsaved changes (browser shows its own native dialog)
-  window.addEventListener('beforeunload', (e) => {
-    if (selectors.anyUnsavedChanges(store.getState())) {
-      e.preventDefault();
-    }
-  });
 }
 
 main().catch(console.error);

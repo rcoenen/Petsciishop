@@ -4,10 +4,12 @@ import * as screensSelectors from '../redux/screensSelectors';
 import { RootState } from '../redux/types';
 
 const AUTO_SAVE_KEY = 'petsciishop-autosave';
-const AUTO_SAVE_INTERVAL_MS = 60_000;
+const DEBOUNCE_MS = 1_000;
 
-export function startAutoSave(getState: () => RootState): () => void {
-  const id = setInterval(() => {
+export function startAutoSave(getState: () => RootState, subscribe: (cb: () => void) => () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const save = () => {
     try {
       const state = getState();
       const screens = screensSelectors.getScreens(state);
@@ -18,9 +20,17 @@ export function startAutoSave(getState: () => RootState): () => void {
     } catch (e) {
       console.warn('Auto-save failed:', e);
     }
-  }, AUTO_SAVE_INTERVAL_MS);
+  };
 
-  return () => clearInterval(id);
+  const unsubscribe = subscribe(() => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(save, DEBOUNCE_MS);
+  });
+
+  return () => {
+    if (timer) clearTimeout(timer);
+    unsubscribe();
+  };
 }
 
 export function loadAutoSave(): string | null {
