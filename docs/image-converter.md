@@ -237,4 +237,4 @@ ECM often produces richer results for complex images because each cell can pick 
 
 ## Credits
 
-The converter algorithm is based on work from [c64-image-to-petscii](https://github.com/mkeke/c64-image-to-petscii) by Simen Lysebo, with significant enhancements including CIE Lab color matching, co-optimized character+color selection, perceptual saliency weighting, brute-force background search, and ECM mode support.
+The original conversion concept comes from [c64-image-to-petscii](https://github.com/mkeke/c64-image-to-petscii) by Simen Lysebo. The Petsciishop implementation is a ground-up rewrite with a redesigned pipeline — CIE Lab perceptual color matching, co-optimized character+color selection, saliency weighting, brute-force background search, luminance matching, and dual Standard/ECM output — producing drastically improved results.
