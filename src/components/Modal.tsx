@@ -40,7 +40,7 @@ class ModalBase extends Component<{ children?: React.ReactNode }> {
 interface ModalAnimWrapperState {
     init: boolean;
 }
-class ModalAnimWrapper extends Component<{ children?: React.ReactNode }, ModalAnimWrapperState> {
+class ModalAnimWrapper extends Component<{ children?: React.ReactNode; width?: number }, ModalAnimWrapperState> {
   state = {
     init: true
   }
@@ -77,7 +77,8 @@ class ModalAnimWrapper extends Component<{ children?: React.ReactNode }, ModalAn
             style={{
               opacity: this.state.init ? 0.0 : 1.0,
               transform: this.state.init ? 'translate(-50%, -40%)' : 'translate(-50%, -50%)',
-              transition: 'opacity 0.2s linear, transform 0.2s linear'
+              transition: 'opacity 0.2s linear, transform 0.2s linear',
+              ...(this.props.width ? { width: this.props.width + 'px' } : {})
             }}>
             {this.props.children}
           </div>
@@ -90,12 +91,13 @@ class ModalAnimWrapper extends Component<{ children?: React.ReactNode }, ModalAn
 interface ModalProps {
   showModal: boolean;
   children?: React.ReactNode;
+  width?: number;
 }
 
 export default class Modal extends Component<ModalProps> {
   modalBody = () => {
     return (
-      <ModalAnimWrapper>
+      <ModalAnimWrapper width={this.props.width}>
         {this.props.children}
       </ModalAnimWrapper>
     )

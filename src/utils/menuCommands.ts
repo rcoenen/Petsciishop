@@ -88,8 +88,8 @@ export function dispatchMenuCommand(
     case 'import-marq-c':
       dispatch(ReduxRoot.actions.fileImportAppend(formats.c));
       return;
-    case 'import-png':
-      dispatch(Toolbar.actions.setShowImport({ show: true, fmt: formats.png }));
+    case 'convert-image':
+      dispatch(Toolbar.actions.setShowImageConverter(true));
       return;
     case 'import-seq':
       dispatch(ReduxRoot.actions.fileImportAppend(formats.seq));

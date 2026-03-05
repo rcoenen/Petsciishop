@@ -121,6 +121,7 @@ export interface Toolbar {
   showCustomFonts: boolean;
   showExport: { show: boolean, fmt?: FileFormat}; // fmt undefined only when show=false
   showImport: { show: boolean, fmt?: FileFormat}; // fmt undefined only when show=false
+  showImageConverter: boolean;
   selectedPaletteRemap: number;
   canvasGrid: boolean;
   shortcutsActive: boolean;

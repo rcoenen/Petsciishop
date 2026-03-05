@@ -25,7 +25,6 @@ function isSep(item: ItemDef): item is SeparatorDef {
 const importers: MenuItemDef[] = [
   { label: 'D64 disk image (.d64)', cmd: 'import-d64' },
   { label: 'PETSCII (.c)',           cmd: 'import-marq-c' },
-  { label: 'PNG (.png)',             cmd: 'import-png' },
   { label: 'Screen Designer (.sdd)', cmd: 'import-sdd' },
   { label: 'SEQ (.seq)',             cmd: 'import-seq' },
 ];
@@ -62,6 +61,8 @@ const menuDefs: Array<{ label: string; items: ItemDef[] }> = [
       { separator: true },
       { label: 'Save',          cmd: 'save',      accelerator: 'Ctrl+S' },
       { label: 'Save As...',    cmd: 'save-as',   accelerator: 'Ctrl+Shift+S' },
+      { separator: true },
+      { label: 'Convert Image...', cmd: 'convert-image' },
       { separator: true },
       { label: 'Import',  submenu: importers },
       { label: 'Export As', submenu: exporters },

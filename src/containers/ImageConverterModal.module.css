@@ -1,0 +1,177 @@
+.container {
+  color: #ddd;
+}
+
+.title {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.dropZone {
+  border: 2px dashed rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  margin-bottom: 12px;
+  transition: border-color 0.2s;
+}
+
+.dropZone:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.settings {
+  margin-bottom: 12px;
+}
+
+.settingsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.settingsRow label {
+  width: 100px;
+  text-align: right;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.settingsRow input[type="range"] {
+  flex: 1;
+}
+
+.settingsRow select {
+  flex: 1;
+  background: #444;
+  color: #ddd;
+  border: 1px solid #666;
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+
+.value {
+  width: 36px;
+  text-align: right;
+  font-size: 13px;
+  font-family: monospace;
+}
+
+.bgSwatches {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.bgAuto {
+  font-size: 11px;
+  padding: 2px 6px;
+  background: #555;
+  color: #ddd;
+  border: 2px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.bgAuto.active {
+  border-color: #fff;
+}
+
+.bgSwatch {
+  width: 18px;
+  height: 18px;
+  border: 2px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.bgSwatch.active {
+  border-color: #fff;
+}
+
+.progressContainer {
+  margin-bottom: 12px;
+}
+
+.progressLabel {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.progressBar {
+  height: 8px;
+  background: #444;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: #6c9;
+  transition: width 0.2s;
+}
+
+.previews {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.previewPanel {
+  flex: 1;
+  text-align: center;
+}
+
+.previewPanel h4 {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+}
+
+.previewCanvas {
+  width: 100%;
+  image-rendering: pixelated;
+  border: 1px solid #555;
+}
+
+.importBtn {
+  margin-top: 6px;
+  padding: 6px 16px;
+  background: #4a7;
+  color: #fff;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.importBtn:hover {
+  background: #5b8;
+}
+
+.ecmNote {
+  font-size: 11px;
+  color: #999;
+  margin-top: 4px;
+}
+
+.footer {
+  text-align: right;
+}
+
+.closeBtn {
+  padding: 6px 20px;
+  background: #555;
+  color: #ddd;
+  border: 1px solid #666;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.closeBtn:hover {
+  background: #666;
+}

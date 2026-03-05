@@ -179,6 +179,7 @@ const actionCreators = {
   setShowCustomFonts: (flag: boolean) => createAction('Toolbar/SET_SHOW_CUSTOM_FONTS', flag),
   setShowExport: (show: {show:boolean, fmt?:FileFormat}) => createAction('Toolbar/SET_SHOW_EXPORT', show),
   setShowImport: (show: {show:boolean, fmt?:FileFormat}) => createAction('Toolbar/SET_SHOW_IMPORT', show),
+  setShowImageConverter: (flag: boolean) => createAction('Toolbar/SET_SHOW_IMAGE_CONVERTER', flag),
   setSelectedPaletteRemap: (remapIdx: number) => createAction('Toolbar/SET_SELECTED_PALETTE_REMAP', remapIdx),
   setCanvasGrid: (flag: boolean) => createAction('Toolbar/SET_CANVAS_GRID', flag),
   setShortcutsActive: (flag: boolean) => createAction('Toolbar/SET_SHORTCUTS_ACTIVE', flag),
@@ -216,7 +217,8 @@ export class Toolbar {
           showSettings,
           showCustomFonts,
           showExport,
-          showImport
+          showImport,
+          showImageConverter
         } = state.toolbar
         const noMods = !shiftKey && !metaKey && !ctrlKey
         const metaOrCtrl = metaKey || ctrlKey
@@ -225,7 +227,8 @@ export class Toolbar {
           state.toolbar.showExport.show ||
           state.toolbar.showImport.show ||
           state.toolbar.showSettings ||
-          state.toolbar.showCustomFonts;
+          state.toolbar.showCustomFonts ||
+          state.toolbar.showImageConverter;
 
         if (inModal) {
           // These shouldn't early exit this function since we check for other
@@ -242,6 +245,9 @@ export class Toolbar {
             }
             if (showImport) {
               dispatch(Toolbar.actions.setShowImport({show:false}));
+            }
+            if (showImageConverter) {
+              dispatch(Toolbar.actions.setShowImageConverter(false));
             }
           }
           return;
@@ -550,6 +556,7 @@ export class Toolbar {
       showCustomFonts: false,
       showExport: { show: false },
       showImport: { show: false },
+      showImageConverter: false,
       selectedPaletteRemap: 0,
       canvasGrid: false,
       shortcutsActive: true,
@@ -681,6 +688,8 @@ export class Toolbar {
         return updateField(state, 'showExport', action.data);
       case 'Toolbar/SET_SHOW_IMPORT':
         return updateField(state, 'showImport', action.data);
+      case 'Toolbar/SET_SHOW_IMAGE_CONVERTER':
+        return updateField(state, 'showImageConverter', action.data);
       case 'Toolbar/SET_SELECTED_PALETTE_REMAP':
         return updateField(state, 'selectedPaletteRemap', action.data);
       case 'Toolbar/SET_CANVAS_GRID':
