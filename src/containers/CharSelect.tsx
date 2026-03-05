@@ -13,7 +13,6 @@ import { framebufIndexMergeProps } from '../redux/utils'
 import CharGrid from '../components/CharGrid'
 import CharPosOverlay from '../components/CharPosOverlay'
 import ColorPicker from '../components/ColorPicker'
-import { CharSelectStatusbar } from '../components/Statusbar'
 
 import * as utils from '../utils'
 import * as fp from '../utils/fp'
@@ -200,11 +199,8 @@ function CharSelectView(props: {
         flexDirection: 'row',
         marginTop:'4px',
         alignItems:'center',
-        justifyContent: 'space-between'
+        justifyContent: 'flex-end'
       }}>
-        <CharSelectStatusbar
-          curScreencode={screencode}
-        />
         <FontSelector
           currentCharset={props.charset}
           setCharset={props.setCharset}
@@ -479,9 +475,8 @@ class CharSelect extends Component<CharSelectProps, CharSelectState> {
             flexDirection: 'row',
             marginTop:'4px',
             alignItems:'center',
-            justifyContent: 'space-between'
+            justifyContent: 'flex-end'
           }}>
-            <CharSelectStatusbar curScreencode={this.props.inspectedScreencode ?? null} />
             <FontSelector
               currentCharset={this.props.charset}
               setCharset={this.props.Framebuffer.setCharset}
