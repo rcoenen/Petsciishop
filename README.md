@@ -1,16 +1,16 @@
-# PetMate Online
+# Petsciishop
 
-A browser-based C64 PETSCII editor. No install needed — runs entirely in your browser.
+A web-based C64 PETSCII graphics editor. No install needed — runs entirely in your browser.
 
-**Try it now:** [https://rcoenen.github.io/petmate-web/](https://rcoenen.github.io/petmate-web/)
+**Try it now:** [https://rcoenen.github.io/Petsciishop/](https://rcoenen.github.io/Petsciishop/)
 
 ## About
 
-PetMate Online is based on [Petmate](https://nurpax.github.io/petmate/) by Janne Hellsten (nurpax), originally an Electron desktop app. This version has been rebuilt as a standalone web application — no Electron, no server, just open the URL and start creating.
+Petsciishop is a C64 PETSCII graphics editor that runs entirely in your browser — no Electron, no server, just open the URL and start creating.
 
-## What's New
+## Features
 
-- **Runs in the browser** — rebuilt on Vite with all file I/O replaced by browser APIs (file pickers, downloads, localStorage)
+- **Runs in the browser** — built on Vite with all file I/O using browser APIs (file pickers, downloads, localStorage)
 - **Image-to-PETSCII converter** — File > Convert Image... loads any image and converts it using CIE Lab perceptual color matching, saliency-weighted character optimization, and three C64 palettes (Colodore, Pepto, CCS64). Supports Standard (256 chars) and ECM (64 chars, 4 backgrounds) modes with live side-by-side previews
 - **SDD import/export** — full Screen Designer Data file support
 - **CRT display filters** — scanlines, color TV, and B&W TV effects
@@ -19,4 +19,4 @@ PetMate Online is based on [Petmate](https://nurpax.github.io/petmate/) by Janne
 
 ## Credits
 
-Original Petmate by [Janne Hellsten](https://github.com/nurpax/petmate). Image converter algorithm ported from [c64-image-to-petscii](https://github.com/niclas2109/c64-image-to-petscii).
+Originally inspired by [Petmate](https://github.com/nurpax/petmate) by Janne Hellsten. Image converter algorithm ported from [c64-image-to-petscii](https://github.com/niclas2109/c64-image-to-petscii).
