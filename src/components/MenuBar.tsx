@@ -89,8 +89,8 @@ const menuDefs: Array<{ label: string; items: ItemDef[] }> = [
   {
     label: 'Help',
     items: [
-      { label: 'GitHub',         href: 'https://github.com/rcoenen/Petscii-shop' },
-      { label: 'Search Issues',  href: 'https://github.com/rcoenen/Petscii-shop/issues' },
+      { label: 'GitHub',         href: 'https://github.com/rcoenen/Petsciishop' },
+      { label: 'Search Issues',  href: 'https://github.com/rcoenen/Petsciishop/issues' },
     ],
   },
 ];

@@ -29,7 +29,7 @@ function AboutModal({ show, onClose }: Props) {
           {' '}by nurpax.
         </p>
         <div className={styles.links}>
-          <a href="https://github.com/rcoenen/Petscii-shop" target="_blank" rel="noreferrer">
+          <a href="https://github.com/rcoenen/Petsciishop" target="_blank" rel="noreferrer">
             Petsciishop on GitHub
           </a>
         </div>
