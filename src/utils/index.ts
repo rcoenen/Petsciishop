@@ -341,7 +341,9 @@ export async function dialogExportFile(
 ) {
   try {
     const { data, mimeType } = await getExportData(fmt, framebufs, cf, palette);
-    downloadBlob(data, `export.${fmt.ext}`, mimeType);
+    const screenName = framebufs[fmt.commonExportParams.selectedFramebufIndex]?.name;
+    const baseName = screenName ? screenName.replace(/[^a-zA-Z0-9_\-. ]/g, '_').trim() || 'export' : 'export';
+    downloadBlob(data, `${baseName}.${fmt.ext}`, mimeType);
   } catch(e: any) {
     showAlert(`Export failed: ${e.message ?? e}`);
     console.error(e);
