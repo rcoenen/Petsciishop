@@ -21,6 +21,9 @@ export function dispatchMenuCommand(
   getState: GetState
 ) {
   switch (command) {
+    case 'about':
+      dispatch(Toolbar.actions.setShowAbout(true));
+      return;
     case 'undo':
       dispatch(ReduxRoot.actions.undo());
       return;

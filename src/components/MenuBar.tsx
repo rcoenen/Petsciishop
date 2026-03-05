@@ -41,6 +41,14 @@ const exporters: MenuItemDef[] = [
 
 const menuDefs: Array<{ label: string; items: ItemDef[] }> = [
   {
+    label: 'PetMate',
+    items: [
+      { label: 'About PetMate', cmd: 'about' },
+      { separator: true },
+      { label: 'Preferences', cmd: 'preferences', accelerator: 'Ctrl+P' },
+    ],
+  },
+  {
     label: 'File',
     items: [
       { label: 'New',           cmd: 'new',       accelerator: 'Ctrl+N' },
@@ -67,8 +75,6 @@ const menuDefs: Array<{ label: string; items: ItemDef[] }> = [
       { label: 'Shift Right',  cmd: 'shift-screen-right', accelerator: 'Alt+→' },
       { label: 'Shift Up',     cmd: 'shift-screen-up',    accelerator: 'Alt+↑' },
       { label: 'Shift Down',   cmd: 'shift-screen-down',  accelerator: 'Alt+↓' },
-      { separator: true },
-      { label: 'Preferences',  cmd: 'preferences',        accelerator: 'Ctrl+P' },
     ],
   },
   {
@@ -138,22 +144,27 @@ export default function MenuBar() {
   const [openMenu, setOpenMenu] = useState<number | null>(null);
   const dispatch = useDispatch();
   const store = useStore();
+  const navRef = React.useRef<HTMLElement>(null);
 
   const handleCommand = useCallback((cmd: string) => {
     setOpenMenu(null);
     dispatchMenuCommand(cmd, dispatch, store.getState as any);
   }, [dispatch, store]);
 
-  // Close on outside click
+  // Close when clicking outside the menu bar
   useEffect(() => {
     if (openMenu === null) return;
-    const close = () => setOpenMenu(null);
-    document.addEventListener('click', close, { capture: true });
-    return () => document.removeEventListener('click', close, { capture: true });
+    const close = (e: MouseEvent) => {
+      if (navRef.current && !navRef.current.contains(e.target as Node)) {
+        setOpenMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
   }, [openMenu]);
 
   return (
-    <nav className={s.menuBar}>
+    <nav className={s.menuBar} ref={navRef}>
       {menuDefs.map((menu, i) => (
         <div key={i} className={s.menu}>
           <button
