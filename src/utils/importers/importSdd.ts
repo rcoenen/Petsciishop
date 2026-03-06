@@ -34,7 +34,6 @@ export function loadSDD(content: string): Framebuf[] {
     const d024El = screenEl.querySelector('D024Colour');
     const bk1El = screenEl.querySelector('BK1Colour');
     const bk2El = screenEl.querySelector('BK2Colour');
-    const paletteIdEl = screenEl.querySelector('PaletteId');
     const authorEl = screenEl.querySelector('Author');
     const dateEl = screenEl.querySelector('Date');
 
@@ -56,7 +55,6 @@ export function loadSDD(content: string): Framebuf[] {
     const d024Color = d024El ? parseInt(d024El.textContent ?? '0') : 0;
     const bk1Color = bk1El ? parseInt(bk1El.textContent ?? '0') : NaN;
     const bk2Color = bk2El ? parseInt(bk2El.textContent ?? '0') : NaN;
-    const paletteId = paletteIdEl?.textContent?.trim() || undefined;
     const author = authorEl?.textContent?.trim() || undefined;
     const date = dateEl?.textContent?.trim() || undefined;
 
@@ -103,9 +101,6 @@ export function loadSDD(content: string): Framebuf[] {
       fbData.mcmMode = true;
       fbData.mcmColor1 = Number.isNaN(bk1Color) ? d022Color : bk1Color;
       fbData.mcmColor2 = Number.isNaN(bk2Color) ? d023Color : bk2Color;
-    }
-    if (paletteId) {
-      fbData.paletteId = paletteId;
     }
     framebufs.push(framebufFromJson(fbData));
   });

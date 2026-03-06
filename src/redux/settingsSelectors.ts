@@ -1,7 +1,6 @@
 
 import { RootState, Settings, PaletteName } from './types'
 import { colorPalettes, getColorPaletteById } from '../utils/palette'
-import * as selectors from './selectors'
 
 export function getSettings(state: RootState): Settings {
   return state.settings['saved']
@@ -36,18 +35,12 @@ export const getSettingsEditingCurrentColorPalette = (state: RootState) => {
   return getSettingsColorPaletteByName(state, settings.selectedColorPalette)
 }
 
-/** Per-screen palette id, falling back to global setting. */
-export const getEffectivePaletteId = (state: RootState, framebufIndex: number | null): string => {
-  if (framebufIndex !== null) {
-    const fb = selectors.getFramebufByIndex(state, framebufIndex);
-    if (fb?.paletteId) {
-      return fb.paletteId;
-    }
-  }
+/** Workspace palette id. Palettes are not stored per file. */
+export const getEffectivePaletteId = (state: RootState, _framebufIndex: number | null): string => {
   return getSettings(state).selectedColorPalette;
 }
 
-/** Per-screen Rgb[] palette, falling back to global setting. */
+/** Workspace Rgb[] palette used by all open files. */
 export const getEffectiveColorPalette = (state: RootState, framebufIndex: number | null) => {
   return getColorPaletteById(getEffectivePaletteId(state, framebufIndex));
 }

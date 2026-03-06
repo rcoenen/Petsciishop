@@ -198,9 +198,6 @@ const framebufFields = (framebuf: Framebuf) => {
     fields.mcmColor1 = framebuf.mcmColor1;
     fields.mcmColor2 = framebuf.mcmColor2;
   }
-  if (framebuf.paletteId) {
-    fields.paletteId = framebuf.paletteId;
-  }
   return fields;
 }
 

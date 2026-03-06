@@ -31,7 +31,7 @@ function saveSettings(settings: ConverterSettings) {
   } catch { /* ignore */ }
 }
 
-function resultToFramebuf(result: ConversionResult, paletteId?: string): Framebuf {
+function resultToFramebuf(result: ConversionResult): Framebuf {
   const framebuf: Pixel[][] = [];
   const isEcm = result.mode === 'ecm';
   for (let row = 0; row < 25; row++) {
@@ -55,7 +55,6 @@ function resultToFramebuf(result: ConversionResult, paletteId?: string): Framebu
     backgroundColor: result.backgroundColor,
     borderColor: result.backgroundColor,
     charset: 'upper',
-    paletteId,
   };
   if (isEcm) {
     return {
@@ -207,10 +206,10 @@ export default function ImageConverterModal() {
   }, []);
 
   const handleImport = useCallback((result: ConversionResult) => {
-    const fb = resultToFramebuf(result, settings.paletteId);
+    const fb = resultToFramebuf(result);
     (dispatch as any)(ReduxRoot.actions.importFramebufsAppend([fb]));
     dispatch(Toolbar.actions.setShowImageConverter(false));
-  }, [dispatch, settings.paletteId]);
+  }, [dispatch]);
 
   const handleClose = useCallback(() => {
     dispatch(Toolbar.actions.setShowImageConverter(false));

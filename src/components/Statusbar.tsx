@@ -55,6 +55,18 @@ export class CanvasStatusbar extends PureComponent<CanvasStatusbarProps> {
     isActive: PropTypes.bool,
     charPos: PropTypes.object
   }
+
+  getColorModeLabel() {
+    const { framebuf } = this.props;
+    if (framebuf.mcmMode) {
+      return 'Multicolor Mode (MCM)';
+    }
+    if (framebuf.ecmMode) {
+      return 'Extended Color Mode (ECM)';
+    }
+    return 'Standard (STD)';
+  }
+
   render () {
     const { isActive, charPos, framebuf } = this.props
     const { width, height } = framebuf
@@ -67,12 +79,17 @@ export class CanvasStatusbar extends PureComponent<CanvasStatusbarProps> {
       }
     }
     const widthHeight = `${framebuf.width}x${framebuf.height}`
+    const colorMode = this.getColorModeLabel();
     return (
       <div style={{paddingTop: '4px', fontSize: '0.8em', display: 'flex', flexDirection:'row'}}>
         <FixedWidthCoord axis='X' number={cp !== null ? cp.col : null} />
         <FixedWidthCoord axis='Y' number={cp !== null ? cp.row : null} />
         <FixedWidthCoord axis='C' number={formatScreencode(cc)} numberPixelWidth={60} />
         <FixedWidthCoord axis='Size' number={widthHeight} numberPixelWidth={40} />
+        <div style={{display: 'flex', flexDirection:'row', marginLeft: '10px'}}>
+          <div style={{color:'var(--main-text-darker-color)'}}>Color Mode:</div>
+          <div style={{color:'var(--main-text-color)', marginLeft: '4px'}}>{colorMode}</div>
+        </div>
         {this.props.inspectedScreencode !== undefined && (
           <FixedWidthCoord
             axis='Char'
@@ -82,12 +99,6 @@ export class CanvasStatusbar extends PureComponent<CanvasStatusbarProps> {
         )}
         {this.props.inspectedColorIndex !== undefined && (
           <FixedWidthCoord axis='Color' number={this.props.inspectedColorIndex} numberPixelWidth={20} />
-        )}
-        {framebuf.ecmMode && (
-          <div style={{color:'var(--main-text-color)', marginLeft: '4px', fontWeight: 'bold'}}>ECM</div>
-        )}
-        {framebuf.mcmMode && (
-          <div style={{color:'var(--main-text-color)', marginLeft: '4px', fontWeight: 'bold'}}>MCM</div>
         )}
       </div>
     )

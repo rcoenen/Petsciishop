@@ -22,6 +22,7 @@ import {
   getEffectiveColorPalette,
   getEffectivePaletteId
 } from '../redux/settingsSelectors'
+import * as settings from '../redux/settings'
 import { C64_PALETTES } from '../utils/c64Palettes'
 
 
@@ -935,7 +936,7 @@ interface EditorProps {
 
 interface EditorDispatch {
   Toolbar: toolbar.PropsFromDispatch;
-  setPaletteId: (paletteId: string | undefined, framebufIndex: number) => void;
+  setWorkspacePaletteId: (paletteId: string) => void;
   setBorderColor: (color: number, framebufIndex: number) => void;
   setBackgroundColor: (color: number, framebufIndex: number) => void;
   setExtBgColor: (index: 1|2|3, color: number, framebufIndex: number) => void;
@@ -966,9 +967,7 @@ class Editor extends Component<EditorProps & EditorDispatch, EditorState> {
   }
 
   handleSetPalette = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    if (this.props.framebufIndex !== null) {
-      this.props.setPaletteId(e.target.value || undefined, this.props.framebufIndex);
-    }
+    this.props.setWorkspacePaletteId(e.target.value);
   }
 
   buildColorTargets = (framebuf: Framebuf): ColorTargetDef[] => {
@@ -1245,8 +1244,11 @@ export default connect(
   dispatch => {
     return {
       Toolbar: Toolbar.bindDispatch(dispatch),
-      setPaletteId: (paletteId: string | undefined, framebufIndex: number) =>
-        dispatch(Framebuffer.actions.setPaletteId(paletteId, framebufIndex)),
+      setWorkspacePaletteId: (paletteId: string) => {
+        dispatch(settings.actions.setSelectedColorPaletteName({ branch: 'saved', name: paletteId }));
+        dispatch(settings.actions.setSelectedColorPaletteName({ branch: 'editing', name: paletteId }));
+        dispatch(settings.actions.saveEdits());
+      },
       setBorderColor: (color: number, framebufIndex: number) =>
         dispatch(Framebuffer.actions.setBorderColor(color, framebufIndex)),
       setBackgroundColor: (color: number, framebufIndex: number) =>

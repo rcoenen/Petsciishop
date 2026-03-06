@@ -40,7 +40,6 @@ export function framebufFromJson(c: any): Framebuf {
     mcmMode: c.mcmMode ?? undefined,
     mcmColor1: c.mcmColor1 ?? undefined,
     mcmColor2: c.mcmColor2 ?? undefined,
-    paletteId: c.paletteId ?? undefined,
   }
 }
 

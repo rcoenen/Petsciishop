@@ -45,7 +45,6 @@ export interface Framebuf {
   readonly mcmMode?: boolean;
   readonly mcmColor1?: number;    // $D022
   readonly mcmColor2?: number;    // $D023
-  readonly paletteId?: string;
 };
 
 // This is the basically the same as the redux Framebuf except

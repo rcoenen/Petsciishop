@@ -59,7 +59,6 @@ const SET_ECM_MODE = 'Framebuffer/SET_ECM_MODE'
 const SET_EXT_BG_COLOR = 'Framebuffer/SET_EXT_BG_COLOR'
 const SET_MCM_MODE = 'Framebuffer/SET_MCM_MODE'
 const SET_MCM_COLOR = 'Framebuffer/SET_MCM_COLOR'
-const SET_PALETTE_ID = 'Framebuffer/SET_PALETTE_ID'
 
 const actionCreators = {
   setPixel: (data: SetCharParams, undoId: number|null, framebufIndex: number) => createFbAction(SET_PIXEL, framebufIndex, undoId, data),
@@ -82,7 +81,6 @@ const actionCreators = {
   setExtBgColor: (data: { index: 1|2|3, color: number }, framebufIndex: number) => createFbAction(SET_EXT_BG_COLOR, framebufIndex, null, data),
   setMcmMode: (data: boolean, framebufIndex: number) => createFbAction(SET_MCM_MODE, framebufIndex, null, data),
   setMcmColor: (data: { index: 1|2, color: number }, framebufIndex: number) => createFbAction(SET_MCM_COLOR, framebufIndex, null, data),
-  setPaletteId: (data: string|undefined, framebufIndex: number) => createFbAction(SET_PALETTE_ID, framebufIndex, null, data),
 };
 
 export const actions = actionCreators;
@@ -203,8 +201,7 @@ export function fbReducer(state: Framebuf = {
   extBgColor3: 0,
   mcmMode: false,
   mcmColor1: 0,
-  mcmColor2: 0,
-  paletteId: undefined
+  mcmColor2: 0
 }, action: Actions): Framebuf {
   switch (action.type) {
     case SET_PIXEL:
@@ -250,8 +247,7 @@ export function fbReducer(state: Framebuf = {
         extBgColor3: c.extBgColor3 ?? 0,
         mcmMode: c.mcmMode ?? false,
         mcmColor1: c.mcmColor1 ?? 0,
-        mcmColor2: c.mcmColor2 ?? 0,
-        paletteId: c.paletteId ?? undefined
+        mcmColor2: c.mcmColor2 ?? 0
       }
     }
     case SET_BACKGROUND_COLOR:
@@ -287,8 +283,6 @@ export function fbReducer(state: Framebuf = {
         if (index === 2) return updateField(state, 'mcmColor2', color);
         return state;
       }
-    case SET_PALETTE_ID:
-      return updateField(state, 'paletteId', action.data);
     case SET_DIMS: {
         const { width, height } = action.data;
         return {
