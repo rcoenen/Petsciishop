@@ -374,13 +374,36 @@ export async function dialogExportFile(
 
 export async function dialogImportFile(type: FileFormat, importFile: (fbs: Framebuf[]) => void) {
   try {
+    const applyImportedName = (fbs: Framebuf[], filename: string): Framebuf[] => {
+      const baseName = filename.replace(/\.[^/.]+$/, '').trim();
+      if (!baseName) {
+        return fbs;
+      }
+      const unnamedCount = fbs.filter((fb) => !fb.name || !fb.name.trim()).length;
+      if (unnamedCount === 0) {
+        return fbs;
+      }
+      let unnamedIdx = 0;
+      return fbs.map((fb) => {
+        if (fb.name && fb.name.trim()) {
+          return fb;
+        }
+        unnamedIdx += 1;
+        const suffix = unnamedCount > 1 ? `_${unnamedIdx}` : '';
+        return {
+          ...fb,
+          name: `${baseName}${suffix}`,
+        };
+      });
+    };
+
     const ext = `.${type.ext}`;
     if (type.ext === 'c' || type.ext === 'sdd') {
-      const { text } = await pickAndReadTextFile(`.${type.ext}`);
+      const { text, name } = await pickAndReadTextFile(`.${type.ext}`);
       const fbs = await loadFramebuf(text, ext);
-      if (fbs.length > 0) importFile(fbs);
+      if (fbs.length > 0) importFile(applyImportedName(fbs, name));
     } else {
-      const { data } = await pickAndReadFile(`.${type.ext}`);
+      const { data, name } = await pickAndReadFile(`.${type.ext}`);
       const bytes = new Uint8Array(data);
       if (type.ext === 'vce') {
         const analysis = analyzeVCE(bytes);
@@ -390,7 +413,7 @@ export async function dialogImportFile(type: FileFormat, importFile: (fbs: Frame
         }
       }
       const fbs = await loadFramebuf(bytes, ext);
-      if (fbs.length > 0) importFile(fbs);
+      if (fbs.length > 0) importFile(applyImportedName(fbs, name));
     }
   } catch(_e) {
     // User cancelled — no action
