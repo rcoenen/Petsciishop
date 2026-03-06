@@ -7,6 +7,7 @@ import { Toolbar } from '../redux/toolbar';
 import styles from './ScreenInfoPanel.module.css';
 
 const MONTH_CODES = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const URL_RE = /(https?:\/\/[^\s]+)/g;
 
 function formatDate(date: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
@@ -14,6 +15,20 @@ function formatDate(date: string): string {
   const monthIdx = parseInt(m[2], 10) - 1;
   if (monthIdx < 0 || monthIdx > 11) return date;
   return `${m[3]}/${MONTH_CODES[monthIdx]}/${m[1]}`;
+}
+
+function renderTextWithLinks(text: string): React.ReactNode {
+  const parts = text.split(URL_RE);
+  return parts.map((part, idx) => {
+    if (/^https?:\/\//.test(part)) {
+      return (
+        <a key={idx} href={part} target="_blank" rel="noreferrer" className={styles.inlineLink}>
+          {part}
+        </a>
+      );
+    }
+    return <React.Fragment key={idx}>{part}</React.Fragment>;
+  });
 }
 
 interface Props {
@@ -43,10 +58,10 @@ function ScreenInfoPanel({ metadata, framebufIndex, onEdit }: Props) {
       </div>
       {hasAny ? (
         <dl className={styles.fields}>
-          {name && <><dt className={styles.label}>Name</dt><dd className={styles.value}>{name}</dd></>}
-          {author && <><dt className={styles.label}>Author</dt><dd className={styles.value}>{author}</dd></>}
+          {name && <><dt className={styles.label}>Name</dt><dd className={styles.value}>{renderTextWithLinks(name)}</dd></>}
+          {author && <><dt className={styles.label}>Author</dt><dd className={styles.value}>{renderTextWithLinks(author)}</dd></>}
           {date && <><dt className={styles.label}>Date</dt><dd className={styles.value}>{formatDate(date)}</dd></>}
-          {description && <><dt className={styles.label}>Desc</dt><dd className={styles.value}>{description}</dd></>}
+          {description && <><dt className={styles.label}>Desc</dt><dd className={styles.value}>{renderTextWithLinks(description)}</dd></>}
         </dl>
       ) : (
         <div className={styles.empty}>No info — click Edit to add.</div>
