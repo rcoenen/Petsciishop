@@ -75,7 +75,6 @@ const menuDefs: Array<{ label: string; items: ItemDef[] }> = [
       { separator: true },
       { label: 'Demo', submenu: [
         { label: 'Petsciishop Logo', cmd: 'load-demo-logo' },
-        { label: 'The Three Graces', cmd: 'load-demo-three-graces' },
         { label: "PETSCII Como '25", submenu: petsciiCompo25Entries },
       ]},
     ],
