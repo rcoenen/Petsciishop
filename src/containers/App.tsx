@@ -17,7 +17,9 @@ import Editor from './Editor';
 import FileDrop from './FileDrop'
 
 import * as reduxToolbar from '../redux/toolbar'
+import * as ReduxRoot from '../redux/root'
 import { loadWorkspaceNoDialog } from '../utils'
+import { loadSDD } from '../utils/importers'
 import MenuBar from '../components/MenuBar'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 
@@ -122,7 +124,17 @@ class AppView extends Component<AppViewProps> {
     this.props.Toolbar.keyUp(event.key)
   }
 
-  handleLoadPetmate = (content: string, name: string) => {
+  handleDroppedFile = (content: string, name: string) => {
+    const lowerName = name.toLowerCase();
+    if (lowerName.endsWith('.sdd')) {
+      try {
+        const framebufs = loadSDD(content);
+        this.props.dispatch((ReduxRoot.actions.importFramebufsAppend(framebufs) as any));
+      } catch (e) {
+        console.error('Failed to import dropped SDD:', e);
+      }
+      return;
+    }
     loadWorkspaceNoDialog(this.props.dispatch, content, name);
   }
 
@@ -134,7 +146,7 @@ class AppView extends Component<AppViewProps> {
           <MenuBar />
           <FileDrop
             className={s.appGrid}
-            loadDroppedFile={this.handleLoadPetmate}
+            loadDroppedFile={this.handleDroppedFile}
           >
             <div className={s.topmenu}>
               <FramebufferTabs />
