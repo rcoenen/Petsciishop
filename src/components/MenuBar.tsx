@@ -45,6 +45,8 @@ const exporters: MenuItemDef[] = [
 ];
 
 const petsciiCompo25Entries: MenuItemDef[] = [
+  { label: 'About', href: 'https://csdb.dk/event/?id=3527' },
+  { separator: true },
   { label: '01 The Three Graces', cmd: 'load-demo-sdd:petscii-compo-25/01_The_Three_Graces.sdd' },
   { label: '02 Future Proof', cmd: 'load-demo-sdd:petscii-compo-25/02_FutureProof.sdd' },
   { label: '03 ATROTOS', cmd: 'load-demo-sdd:petscii-compo-25/03_ATROTOS.sdd' },
@@ -75,7 +77,7 @@ const menuDefs: Array<{ label: string; items: ItemDef[] }> = [
       { separator: true },
       { label: 'Demo', submenu: [
         { label: 'Petsciishop Logo', cmd: 'load-demo-logo' },
-        { label: "PETSCII Como '25", submenu: petsciiCompo25Entries },
+        { label: 'Plain PETSCII 2025', submenu: petsciiCompo25Entries },
       ]},
     ],
   },
