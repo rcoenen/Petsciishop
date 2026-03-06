@@ -16,6 +16,29 @@ function dispatchExport(dispatch: StoreDispatch, fmt: FileFormat) {
   }
 }
 
+const demo2025SddPaths = [
+  'petscii-compo-25/01_The_Three_Graces.sdd',
+  'petscii-compo-25/02_FutureProof.sdd',
+  'petscii-compo-25/03_ATROTOS.sdd',
+  'petscii-compo-25/04_TheMilkshakeManPet-msm.sdd',
+  'petscii-compo-25/05_ShadyChars.sdd',
+  'petscii-compo-25/06_plain.sdd',
+  'petscii-compo-25/07_theracemyd.sdd',
+  'petscii-compo-25/08_CPUend.sdd',
+  'petscii-compo-25/09_Technomancy_Skleptoid.sdd',
+  'petscii-compo-25/10_hohenzollern.sdd',
+  'petscii-compo-25/11_TRIAD-ICU.sdd',
+  'petscii-compo-25/12_I_yam_what_I_yam.sdd',
+  'petscii-compo-25/13_TRIAD-Sloot.sdd',
+  'petscii-compo-25/14_cathode_ray_mission_ldx40.sdd',
+  'petscii-compo-25/15_whohoo_myd.sdd',
+  'petscii-compo-25/16_otl_aicher.sdd',
+  'petscii-compo-25/17_rain.sdd',
+  'petscii-compo-25/18_who_ya_gonna_call.sdd',
+  'petscii-compo-25/19_plain2.sdd',
+  'petscii-compo-25/20_Mallorca.sdd',
+];
+
 export function dispatchMenuCommand(
   command: string,
   dispatch: StoreDispatch,
@@ -120,6 +143,18 @@ export function dispatchMenuCommand(
           const framebufs = loadSDD(text);
           dispatch(ReduxRoot.actions.importFramebufsAppend(framebufs));
         });
+      return;
+    case 'load-demo-all-2025':
+      Promise.all(
+        demo2025SddPaths.map(path =>
+          fetch(import.meta.env.BASE_URL + `demo/${path}`)
+            .then(r => r.text())
+            .then(loadSDD)
+        )
+      ).then((allFramebufs) => {
+        const merged = allFramebufs.flat();
+        dispatch(ReduxRoot.actions.importFramebufsAppend(merged));
+      });
       return;
     case 'preferences':
       dispatch(Toolbar.actions.setShowSettings(true));

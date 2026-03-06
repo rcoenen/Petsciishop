@@ -119,6 +119,8 @@ const menuDefs: Array<{ label: string; items: ItemDef[] }> = [
       { label: 'Search Issues',             href: 'https://github.com/rcoenen/Petsciishop/issues' },
       { label: 'Feedback, Ideas & Showcase', href: 'https://github.com/rcoenen/Petsciishop/discussions' },
       { separator: true },
+      { label: 'Open All Demo Files', cmd: 'load-demo-all-2025' },
+      { separator: true },
       { label: 'Reset Workspace...', cmd: 'reset-workspace' },
     ],
   },
