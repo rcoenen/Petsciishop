@@ -102,6 +102,21 @@ export default function MobileShareViewer({ framebuf }: MobileShareViewerProps) 
     });
 
     const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1 && zoom > 1) {
+        // Single-finger pan when zoomed in
+        const t = e.touches[0];
+        gestureRef.current = {
+          ...gestureRef.current,
+          active: true,
+          startMidX: t.clientX,
+          startMidY: t.clientY,
+          startPanX: pan.x,
+          startPanY: pan.y,
+          startDistance: 0,
+        };
+        e.preventDefault();
+        return;
+      }
       if (e.touches.length !== 2) {
         return;
       }
@@ -109,21 +124,35 @@ export default function MobileShareViewer({ framebuf }: MobileShareViewerProps) 
       const t2 = e.touches[1];
       const mid = midpoint(t1, t2);
       gestureRef.current = {
+        ...gestureRef.current,
         active: true,
         startDistance: distance(t1, t2),
         startZoom: zoom,
         startMidX: mid.x,
         startMidY: mid.y,
         startPanX: pan.x,
-        startPanY: pan.y
+        startPanY: pan.y,
       };
       e.preventDefault();
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (!gestureRef.current.active || e.touches.length !== 2) {
+      if (!gestureRef.current.active) return;
+
+      // Single-finger pan
+      if (e.touches.length === 1 && gestureRef.current.startDistance === 0) {
+        const t = e.touches[0];
+        const g = gestureRef.current;
+        setPan({
+          x: g.startPanX + (t.clientX - g.startMidX),
+          y: g.startPanY + (t.clientY - g.startMidY),
+        });
+        e.preventDefault();
         return;
       }
+
+      // Two-finger pinch-zoom + pan
+      if (e.touches.length !== 2) return;
       const t1 = e.touches[0];
       const t2 = e.touches[1];
       const dist = distance(t1, t2);
@@ -153,16 +182,48 @@ export default function MobileShareViewer({ framebuf }: MobileShareViewerProps) 
       }
     };
 
+    // Mouse drag for desktop
+    const onMouseDown = (e: MouseEvent) => {
+      if (zoom <= 1) return;
+      gestureRef.current = {
+        ...gestureRef.current,
+        active: true,
+        startMidX: e.clientX,
+        startMidY: e.clientY,
+        startPanX: pan.x,
+        startPanY: pan.y,
+        startDistance: 0,
+      };
+      e.preventDefault();
+    };
+    const onMouseMove = (e: MouseEvent) => {
+      if (!gestureRef.current.active) return;
+      const g = gestureRef.current;
+      setPan({
+        x: g.startPanX + (e.clientX - g.startMidX),
+        y: g.startPanY + (e.clientY - g.startMidY),
+      });
+    };
+    const onMouseUp = () => {
+      gestureRef.current.active = false;
+    };
+
     el.addEventListener('touchstart', onTouchStart, { passive: false });
     el.addEventListener('touchmove', onTouchMove, { passive: false });
     el.addEventListener('touchend', onTouchEnd);
     el.addEventListener('touchcancel', onTouchEnd);
+    el.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
 
     return () => {
       el.removeEventListener('touchstart', onTouchStart as EventListener);
       el.removeEventListener('touchmove', onTouchMove as EventListener);
       el.removeEventListener('touchend', onTouchEnd);
       el.removeEventListener('touchcancel', onTouchEnd);
+      el.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
     };
   }, [isFullscreen, zoom, pan.x, pan.y]);
 
