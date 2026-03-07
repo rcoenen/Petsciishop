@@ -242,19 +242,8 @@ function FramebufTab(props: FramebufTabProps) {
   const [displayedPaletteId, setDisplayedPaletteId] = useState(props.currentPaletteId);
   const timeoutRef = useRef<number | null>(null);
 
-  useLayoutEffect(() => {
-    if (!props.active) {
-      return;
-    }
-    if (timeoutRef.current !== null) {
-      window.clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    setDisplayedPaletteId(props.currentPaletteId);
-  }, [props.active, props.currentPaletteId]);
-
   useEffect(() => {
-    if (props.active || displayedPaletteId === props.currentPaletteId) {
+    if (displayedPaletteId === props.currentPaletteId) {
       return;
     }
     if (timeoutRef.current !== null) {
@@ -263,7 +252,7 @@ function FramebufTab(props: FramebufTabProps) {
     timeoutRef.current = window.setTimeout(() => {
       timeoutRef.current = null;
       setDisplayedPaletteId(props.currentPaletteId);
-    }, THUMBNAIL_UPDATE_DELAY_MS * props.paletteUpdateOrder);
+    }, THUMBNAIL_UPDATE_DELAY_MS * (props.paletteUpdateOrder + 1));
 
     return () => {
       if (timeoutRef.current !== null) {
@@ -271,7 +260,7 @@ function FramebufTab(props: FramebufTabProps) {
         timeoutRef.current = null;
       }
     };
-  }, [displayedPaletteId, props.active, props.currentPaletteId, props.paletteUpdateOrder]);
+  }, [displayedPaletteId, props.currentPaletteId, props.paletteUpdateOrder]);
 
   useEffect(() => {
     return () => {
