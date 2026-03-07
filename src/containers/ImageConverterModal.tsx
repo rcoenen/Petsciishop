@@ -103,6 +103,33 @@ type ConverterModeKey = 'outputStandard' | 'outputEcm' | 'outputMcm';
 type PreviewMode = 'standard' | 'ecm' | 'mcm';
 type PreviewSignatures = Partial<Record<PreviewMode, string>>;
 
+function trimResultsForSettings(
+  results: ConversionOutputs | null,
+  settings: ConverterSettings
+): ConversionOutputs | null {
+  if (!results) return results;
+
+  return {
+    standard: settings.outputStandard ? results.standard : undefined,
+    ecm: settings.outputEcm ? results.ecm : undefined,
+    mcm: settings.outputMcm ? results.mcm : undefined,
+    previewStd: settings.outputStandard ? results.previewStd : undefined,
+    previewEcm: settings.outputEcm ? results.previewEcm : undefined,
+    previewMcm: settings.outputMcm ? results.previewMcm : undefined,
+  };
+}
+
+function trimSignaturesForSettings(
+  signatures: PreviewSignatures,
+  settings: ConverterSettings
+): PreviewSignatures {
+  return {
+    standard: settings.outputStandard ? signatures.standard : undefined,
+    ecm: settings.outputEcm ? signatures.ecm : undefined,
+    mcm: settings.outputMcm ? signatures.mcm : undefined,
+  };
+}
+
 function buildPreviewSignature(
   mode: PreviewMode,
   settings: ConverterSettings,
@@ -348,6 +375,8 @@ export default function ImageConverterModal() {
       if (!next.outputStandard && !next.outputEcm && !next.outputMcm) {
         return prev;
       }
+      setResults(current => trimResultsForSettings(current, next));
+      setResultSignatures(current => trimSignaturesForSettings(current, next));
       saveSettings(next);
       return next;
     });
@@ -394,9 +423,9 @@ export default function ImageConverterModal() {
 
   const activePalette = PALETTES.find(p => p.id === settings.paletteId) || PALETTES[0];
   const currentSignatures = buildPreviewSignatures(settings, sourceVersion);
-  const showStandardPreview = Boolean(results?.standard) || Boolean(image && settings.outputStandard);
-  const showEcmPreview = Boolean(results?.ecm) || Boolean(image && settings.outputEcm);
-  const showMcmPreview = Boolean(results?.mcm) || Boolean(image && settings.outputMcm);
+  const showStandardPreview = Boolean(image && settings.outputStandard);
+  const showEcmPreview = Boolean(image && settings.outputEcm);
+  const showMcmPreview = Boolean(image && settings.outputMcm);
   const standardStale = Boolean(results?.standard && resultSignatures.standard !== currentSignatures.standard);
   const ecmStale = Boolean(results?.ecm && resultSignatures.ecm !== currentSignatures.ecm);
   const mcmStale = Boolean(results?.mcm && resultSignatures.mcm !== currentSignatures.mcm);
