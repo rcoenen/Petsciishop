@@ -75,6 +75,21 @@ export default function MobileShareViewer({ framebuf }: MobileShareViewerProps) 
     () => computeOutputImageDims({ ...framebuf, font } as FramebufWithFont, renderBorders, MOBILE_BORDER_SPEC),
     [framebuf, font]
   );
+  const gridOverlayStyle = useMemo<React.CSSProperties>(() => {
+    const borderLeft = renderBorders ? MOBILE_BORDER_SPEC.left : 0;
+    const borderTop = renderBorders ? MOBILE_BORDER_SPEC.top : 0;
+    const screenPixelWidth = framebuf.width * 8;
+    const screenPixelHeight = framebuf.height * 8;
+
+    return {
+      left: `${(borderLeft / dims.imgWidth) * 100}%`,
+      top: `${(borderTop / dims.imgHeight) * 100}%`,
+      width: `${(screenPixelWidth / dims.imgWidth) * 100}%`,
+      height: `${(screenPixelHeight / dims.imgHeight) * 100}%`,
+      ['--grid-cols' as any]: framebuf.width,
+      ['--grid-rows' as any]: framebuf.height,
+    };
+  }, [dims.imgHeight, dims.imgWidth, framebuf.height, framebuf.width, renderBorders]);
   const borderCssColor = useMemo(() => {
     const c = palette[framebuf.borderColor];
     return `rgb(${c.r}, ${c.g}, ${c.b})`;
@@ -367,7 +382,7 @@ export default function MobileShareViewer({ framebuf }: MobileShareViewerProps) 
           {showGrid && (
             <div
               className={s.gridOverlay}
-              style={{ ['--grid-cols' as any]: framebuf.width, ['--grid-rows' as any]: framebuf.height }}
+              style={gridOverlayStyle}
             />
           )}
         </div>
