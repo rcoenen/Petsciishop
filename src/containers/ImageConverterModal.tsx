@@ -8,6 +8,7 @@ import { getROMFontBits } from '../redux/selectors';
 import {
   convertImage,
   ConversionCancelledError,
+  disposeStandardConverterWorkers,
   ConverterFontBits,
   ConversionOutputs,
   ConversionResult,
@@ -127,7 +128,17 @@ function resultToFramebuf(result: ConversionResult, metadata?: Framebuf['metadat
 type ConverterModeKey = 'outputStandard' | 'outputEcm' | 'outputMcm';
 type PreviewMode = 'standard' | 'ecm' | 'mcm';
 type PreviewSignatures = Partial<Record<PreviewMode, string>>;
+type PreviewTiming = { startedAtMs: number | null; completedSeconds: number | null };
+type PreviewTimings = Record<PreviewMode, PreviewTiming>;
 const PREVIEW_MODE_ORDER: PreviewMode[] = ['standard', 'ecm', 'mcm'];
+
+function createEmptyPreviewTimings(): PreviewTimings {
+  return {
+    standard: { startedAtMs: null, completedSeconds: null },
+    ecm: { startedAtMs: null, completedSeconds: null },
+    mcm: { startedAtMs: null, completedSeconds: null },
+  };
+}
 
 function trimResultsForSettings(
   results: ConversionOutputs | null,
@@ -328,6 +339,52 @@ function isPreviewOverlayActive(
   return converting && activeRenderMode === mode;
 }
 
+function formatElapsedDuration(totalSeconds: number): string {
+  const clampedSeconds = Math.max(1, totalSeconds);
+  const hours = Math.floor(clampedSeconds / 3600);
+  const minutes = Math.floor((clampedSeconds % 3600) / 60);
+  const seconds = clampedSeconds % 60;
+  const parts: string[] = [];
+
+  if (hours > 0) {
+    parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
+  }
+  if (minutes > 0) {
+    parts.push(`${minutes} minute${minutes === 1 ? '' : 's'}`);
+  }
+  if (seconds > 0 || parts.length === 0) {
+    parts.push(`${seconds} second${seconds === 1 ? '' : 's'}`);
+  }
+
+  return parts.join(' ');
+}
+
+function getElapsedSeconds(startedAtMs: number, nowMs: number): number {
+  return Math.max(1, Math.ceil((nowMs - startedAtMs) / 1000));
+}
+
+function getLiveTimingLabel(
+  mode: PreviewMode,
+  timings: PreviewTimings,
+  converting: boolean,
+  activeRenderMode: PreviewMode | null,
+  nowMs: number
+): string | null {
+  if (!converting || activeRenderMode !== mode) return null;
+  const startedAtMs = timings[mode].startedAtMs;
+  if (startedAtMs === null) return null;
+  return formatElapsedDuration(getElapsedSeconds(startedAtMs, nowMs));
+}
+
+function getCompletedTimingLabel(
+  completedSeconds: number | null,
+  hasResult: boolean,
+  isStale: boolean
+): string | null {
+  if (!hasResult || isStale || completedSeconds === null) return null;
+  return `Finished processing in ${formatElapsedDuration(completedSeconds)}`;
+}
+
 export default function ImageConverterModal() {
   const show = useSelector((state: RootState) => state.toolbar.showImageConverter);
   const dispatch = useDispatch();
@@ -341,6 +398,8 @@ export default function ImageConverterModal() {
   const [progress, setProgress] = useState({ stage: '', detail: '', pct: 0 });
   const [results, setResults] = useState<ConversionOutputs | null>(null);
   const [resultSignatures, setResultSignatures] = useState<PreviewSignatures>({});
+  const [previewTimings, setPreviewTimings] = useState<PreviewTimings>(createEmptyPreviewTimings);
+  const [timerNowMs, setTimerNowMs] = useState(() => Date.now());
 
   const stdCanvasRef = useRef<HTMLCanvasElement>(null);
   const ecmCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -362,6 +421,7 @@ export default function ImageConverterModal() {
 
   const resetModalState = useCallback(() => {
     conversionIdRef.current += 1;
+    disposeStandardConverterWorkers();
     if (convertTimeoutRef.current) {
       clearTimeout(convertTimeoutRef.current);
       convertTimeoutRef.current = null;
@@ -374,6 +434,7 @@ export default function ImageConverterModal() {
     setSourceVersion(0);
     setResults(null);
     setResultSignatures({});
+    setPreviewTimings(createEmptyPreviewTimings());
     setProgress({ stage: '', detail: '', pct: 0 });
     setActiveRenderMode(null);
     setConverting(false);
@@ -385,6 +446,21 @@ export default function ImageConverterModal() {
       resetModalState();
     }
   }, [show, resetModalState]);
+
+  useEffect(() => {
+    if (!converting || !activeRenderMode) {
+      return;
+    }
+
+    setTimerNowMs(Date.now());
+    const intervalId = setInterval(() => {
+      setTimerNowMs(Date.now());
+    }, 1000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [converting, activeRenderMode]);
 
   // Auto-convert the first render only. Once previews exist, setting changes
   // should only mark them stale until the user explicitly requests rerendering.
@@ -438,7 +514,15 @@ export default function ImageConverterModal() {
       } catch { return; }
     }
     const conversionId = ++conversionIdRef.current;
+    let currentMode: PreviewMode | null = null;
     setConverting(true);
+    setPreviewTimings(prev => {
+      const next = { ...prev };
+      for (const mode of queuedModes) {
+        next[mode] = { startedAtMs: null, completedSeconds: null };
+      }
+      return next;
+    });
     let nextResults = trimResultsForSettings(initialResults, s);
     let nextSignatures = trimSignaturesForSettings(initialSignatures, s);
     try {
@@ -447,7 +531,14 @@ export default function ImageConverterModal() {
           return;
         }
 
+        const startedAtMs = Date.now();
+        currentMode = mode;
         setActiveRenderMode(mode);
+        setTimerNowMs(startedAtMs);
+        setPreviewTimings(prev => ({
+          ...prev,
+          [mode]: { startedAtMs, completedSeconds: null },
+        }));
         setProgress({ stage: '', detail: '', pct: 0 });
 
         const output = await convertImage(
@@ -470,13 +561,33 @@ export default function ImageConverterModal() {
         nextSignatures = updateModeSignature(nextSignatures, mode, s, sourceVersionValue);
         setResults(nextResults);
         setResultSignatures(nextSignatures);
+        setPreviewTimings(prev => ({
+          ...prev,
+          [mode]: {
+            startedAtMs: null,
+            completedSeconds: getElapsedSeconds(startedAtMs, Date.now()),
+          },
+        }));
+        currentMode = null;
 
         // Let React commit the updated preview before the next output starts.
         await new Promise(resolve => setTimeout(resolve, 0));
       }
     } catch (err) {
       if (err instanceof ConversionCancelledError) {
+        if (conversionId === conversionIdRef.current && currentMode) {
+          setPreviewTimings(prev => ({
+            ...prev,
+            [currentMode]: { startedAtMs: null, completedSeconds: null },
+          }));
+        }
         return;
+      }
+      if (conversionId === conversionIdRef.current && currentMode) {
+        setPreviewTimings(prev => ({
+          ...prev,
+          [currentMode]: { startedAtMs: null, completedSeconds: null },
+        }));
       }
       console.error('Conversion failed:', err);
     } finally {
@@ -500,6 +611,7 @@ export default function ImageConverterModal() {
         }
         setResults(null);
         setResultSignatures({});
+        setPreviewTimings(createEmptyPreviewTimings());
         setProgress({ stage: '', detail: '', pct: 0 });
         setActiveRenderMode(null);
         setConverting(false);
@@ -620,6 +732,24 @@ export default function ImageConverterModal() {
   const standardOverlayActive = standardStale && isPreviewOverlayActive('standard', converting, activeRenderMode);
   const ecmOverlayActive = ecmStale && isPreviewOverlayActive('ecm', converting, activeRenderMode);
   const mcmOverlayActive = mcmStale && isPreviewOverlayActive('mcm', converting, activeRenderMode);
+  const standardLiveTiming = getLiveTimingLabel('standard', previewTimings, converting, activeRenderMode, timerNowMs);
+  const ecmLiveTiming = getLiveTimingLabel('ecm', previewTimings, converting, activeRenderMode, timerNowMs);
+  const mcmLiveTiming = getLiveTimingLabel('mcm', previewTimings, converting, activeRenderMode, timerNowMs);
+  const standardCompletedTiming = getCompletedTimingLabel(
+    previewTimings.standard.completedSeconds,
+    Boolean(results?.standard),
+    standardStale
+  );
+  const ecmCompletedTiming = getCompletedTimingLabel(
+    previewTimings.ecm.completedSeconds,
+    Boolean(results?.ecm),
+    ecmStale
+  );
+  const mcmCompletedTiming = getCompletedTimingLabel(
+    previewTimings.mcm.completedSeconds,
+    Boolean(results?.mcm),
+    mcmStale
+  );
 
   const handleManualRerender = useCallback(() => {
     if (!image || converting || dirtyModes.length === 0) {
@@ -842,6 +972,7 @@ export default function ImageConverterModal() {
                           <div className={styles.previewPlaceholderBar}>
                             <div className={styles.previewPlaceholderFill} style={{ width: `${standardPending.pct}%` }} />
                           </div>
+                          {standardLiveTiming && <div className={styles.previewTimingLive}>{standardLiveTiming}</div>}
                         </div>
                       </div>
                     )}
@@ -850,6 +981,7 @@ export default function ImageConverterModal() {
                     <span className={styles.charsetSample}>{getCharsetIndicator(results.standard.charset).sample}</span>
                     <span>{getCharsetIndicator(results.standard.charset).label}</span>
                   </div>
+                  {standardCompletedTiming && <div className={styles.previewTimingDone}>{standardCompletedTiming}</div>}
                   <button
                     className={styles.importBtn}
                     disabled={standardStale || converting}
@@ -865,6 +997,7 @@ export default function ImageConverterModal() {
                     <div className={styles.previewPlaceholderBar}>
                       <div className={styles.previewPlaceholderFill} style={{ width: `${standardPending.pct}%` }} />
                     </div>
+                    {standardLiveTiming && <div className={styles.previewTimingLive}>{standardLiveTiming}</div>}
                   </div>
                 </div>
                 </div>
@@ -891,6 +1024,7 @@ export default function ImageConverterModal() {
                           <div className={styles.previewPlaceholderBar}>
                             <div className={styles.previewPlaceholderFill} style={{ width: `${ecmPending.pct}%` }} />
                           </div>
+                          {ecmLiveTiming && <div className={styles.previewTimingLive}>{ecmLiveTiming}</div>}
                         </div>
                       </div>
                     )}
@@ -899,6 +1033,7 @@ export default function ImageConverterModal() {
                     <span className={styles.charsetSample}>{getCharsetIndicator(results.ecm.charset).sample}</span>
                     <span>{getCharsetIndicator(results.ecm.charset).label}</span>
                   </div>
+                  {ecmCompletedTiming && <div className={styles.previewTimingDone}>{ecmCompletedTiming}</div>}
                   <button
                     className={styles.importBtn}
                     disabled={ecmStale || converting}
@@ -914,6 +1049,7 @@ export default function ImageConverterModal() {
                     <div className={styles.previewPlaceholderBar}>
                       <div className={styles.previewPlaceholderFill} style={{ width: `${ecmPending.pct}%` }} />
                     </div>
+                    {ecmLiveTiming && <div className={styles.previewTimingLive}>{ecmLiveTiming}</div>}
                   </div>
                 </div>
                 </div>
@@ -940,6 +1076,7 @@ export default function ImageConverterModal() {
                           <div className={styles.previewPlaceholderBar}>
                             <div className={styles.previewPlaceholderFill} style={{ width: `${mcmPending.pct}%` }} />
                           </div>
+                          {mcmLiveTiming && <div className={styles.previewTimingLive}>{mcmLiveTiming}</div>}
                         </div>
                       </div>
                     )}
@@ -948,6 +1085,7 @@ export default function ImageConverterModal() {
                     <span className={styles.charsetSample}>{getCharsetIndicator(results.mcm.charset).sample}</span>
                     <span>{getCharsetIndicator(results.mcm.charset).label}</span>
                   </div>
+                  {mcmCompletedTiming && <div className={styles.previewTimingDone}>{mcmCompletedTiming}</div>}
                   <button
                     className={styles.importBtn}
                     disabled={mcmStale || converting}
@@ -966,6 +1104,7 @@ export default function ImageConverterModal() {
                     <div className={styles.previewPlaceholderBar}>
                       <div className={styles.previewPlaceholderFill} style={{ width: `${mcmPending.pct}%` }} />
                     </div>
+                    {mcmLiveTiming && <div className={styles.previewTimingLive}>{mcmLiveTiming}</div>}
                   </div>
                 </div>
                 </div>

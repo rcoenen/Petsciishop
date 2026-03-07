@@ -3,6 +3,16 @@
 
 import { C64_PALETTES } from '../c64Palettes';
 import { mcmForegroundColor, mcmIsMulticolorCell, mcmResolveBitPairColor } from '../mcm';
+import {
+  buildAlignmentOffsets as buildStandardAlignmentOffsets,
+  ConversionCancelledError,
+  solveStandardCombo,
+} from './imageConverterStandardCore';
+import type { StandardSolvedModeCandidate } from './imageConverterStandardCore';
+import {
+  disposeStandardConverterWorkers,
+  runStandardConversionInWorkers,
+} from './imageConverterStandardWorkerPool';
 
 const CANVAS_WIDTH = 320;
 const CANVAS_HEIGHT = 200;
@@ -14,14 +24,10 @@ const CELL_COUNT = GRID_WIDTH * GRID_HEIGHT;
 const PIXELS_PER_CELL = CELL_WIDTH * CELL_HEIGHT;
 const MCM_PIXELS_PER_CELL = 32;
 
-const ALIGNMENT_VALUES = [-2, -1, 0, 1, 2];
-const STANDARD_SAMPLE_COUNT = 96;
 const ECM_SAMPLE_COUNT = 96;
 const MCM_SAMPLE_COUNT = 24;
-const STANDARD_FINALIST_COUNT = 4;
 const ECM_FINALIST_COUNT = 8;
 const MCM_FINALIST_COUNT = 6;
-const STANDARD_POOL_SIZE = 6;
 const ECM_POOL_SIZE = 6;
 const MCM_POOL_SIZE = 6;
 const SCREEN_SOLVE_PASSES = 5;
@@ -691,17 +697,6 @@ function analyzeAlignedSourceImage(
 
 // --- Search helpers ---
 
-function buildAlignmentOffsets(): AlignmentOffset[] {
-  const offsets: AlignmentOffset[] = [];
-  for (const y of ALIGNMENT_VALUES) {
-    for (const x of ALIGNMENT_VALUES) {
-      offsets.push({ x, y });
-    }
-  }
-  offsets.sort((a, b) => (Math.abs(a.x) + Math.abs(a.y)) - (Math.abs(b.x) + Math.abs(b.y)));
-  return offsets;
-}
-
 function createScopedProgress(
   onProgress: ProgressCallback,
   progressStart: number,
@@ -713,12 +708,8 @@ function createScopedProgress(
   };
 }
 
-export class ConversionCancelledError extends Error {
-  constructor() {
-    super('Image conversion cancelled');
-    this.name = 'ConversionCancelledError';
-  }
-}
+export { ConversionCancelledError } from './imageConverterStandardCore';
+export { disposeStandardConverterWorkers } from './imageConverterStandardWorkerPool';
 
 function throwIfCancelled(shouldCancel?: () => boolean) {
   if (shouldCancel?.()) {
@@ -1383,60 +1374,6 @@ function pickBetterModeCandidate(
   return next.error < current.error ? next : current;
 }
 
-async function solveStandardForCombo(
-  analysis: SourceAnalysis,
-  context: CharsetConversionContext,
-  metrics: PaletteMetricData,
-  settings: ConverterSettings,
-  backgroundColors: number[],
-  palette: PaletteColor[],
-  onProgress: ProgressCallback,
-  shouldCancel?: () => boolean
-): Promise<SolvedModeCandidate> {
-  const sampleIndices = getSampleIndices(analysis.rankedIndices, STANDARD_SAMPLE_COUNT);
-  const coarseScores = new Float64Array(16);
-
-  for (const cellIndex of sampleIndices) {
-    const bestByBg = buildBinaryBestErrorByBackground(analysis.cells[cellIndex], context, metrics, settings, 256, 16);
-    for (let bg = 0; bg < 16; bg++) coarseScores[bg] += bestByBg[bg];
-  }
-
-  const finalists = backgroundColors
-    .map(bg => ({ bg, score: coarseScores[bg] }))
-    .sort((a, b) => a.score - b.score)
-    .slice(0, Math.min(STANDARD_FINALIST_COUNT, backgroundColors.length));
-
-  let best: SolvedModeCandidate | undefined;
-  for (let index = 0; index < finalists.length; index++) {
-    const bg = finalists[index].bg;
-    onProgress('Converting', `Standard background ${bg} (${index + 1}/${finalists.length})`, Math.round((index / Math.max(1, finalists.length)) * 100));
-    await yieldToUI(shouldCancel);
-
-    const candidatePools = await buildBinaryCandidatePools(
-      analysis.cells, context, metrics, settings, 256, [bg], 16, STANDARD_POOL_SIZE, shouldCancel
-    );
-    const solved = await solveScreen(candidatePools, analysis, metrics, shouldCancel);
-    const conversion: ConversionResult = {
-      screencodes: solved.screencodes,
-      colors: solved.colors,
-      backgroundColor: bg,
-      ecmBgColors: [],
-      bgIndices: [],
-      mcmSharedColors: [],
-      charset: 'upper',
-      mode: 'standard',
-    };
-    best = pickBetterModeCandidate(best, {
-      result: solved,
-      conversion,
-      preview: renderPreview(solved, palette, context.ref, bg, [], 'standard'),
-      error: solved.totalError,
-    });
-  }
-
-  return best!;
-}
-
 function chooseOrderedEcmBackgrounds(
   backgrounds: number[],
   selected: ScreenCandidate[],
@@ -1673,8 +1610,27 @@ function renderMcmPreview(
 
 export type ProgressCallback = (stage: string, detail: string, pct: number) => void;
 
-async function solveModeAcrossCombos(
-  mode: 'standard' | 'ecm' | 'mcm',
+function toSolvedModeCandidate(
+  candidate: StandardSolvedModeCandidate,
+  palette: PaletteColor[],
+  contexts: Record<ConverterCharset, CharsetConversionContext>
+): SolvedModeCandidate {
+  const result: PetsciiResult = {
+    screencodes: candidate.conversion.screencodes,
+    colors: candidate.conversion.colors,
+    bgIndices: [],
+    totalError: candidate.error,
+  };
+  const context = contexts[candidate.conversion.charset];
+  return {
+    result,
+    conversion: candidate.conversion,
+    preview: renderPreview(result, palette, context.ref, candidate.conversion.backgroundColor, [], 'standard'),
+    error: candidate.error,
+  };
+}
+
+async function solveStandardAcrossCombosSequential(
   preprocessed: PreprocessedFittedImage,
   settings: ConverterSettings,
   contexts: Record<ConverterCharset, CharsetConversionContext>,
@@ -1683,7 +1639,107 @@ async function solveModeAcrossCombos(
   onProgress: ProgressCallback,
   shouldCancel?: () => boolean
 ): Promise<SolvedModeCandidate | undefined> {
-  const offsets = buildAlignmentOffsets();
+  const offsets = buildStandardAlignmentOffsets();
+  const combos: { charset: ConverterCharset; offset: AlignmentOffset }[] = [];
+  for (const offset of offsets) {
+    combos.push({ charset: 'upper', offset });
+    combos.push({ charset: 'lower', offset });
+  }
+
+  let best: StandardSolvedModeCandidate | undefined;
+  onProgress('Alignment', `STANDARD 0 of ${combos.length}`, 0);
+
+  for (let comboIndex = 0; comboIndex < combos.length; comboIndex++) {
+    const combo = combos[comboIndex];
+    await yieldToUI(shouldCancel);
+    const solved = await solveStandardCombo(
+      preprocessed,
+      settings,
+      contexts[combo.charset] as any,
+      metrics as any,
+      combo.charset,
+      combo.offset,
+      undefined,
+      shouldCancel
+    );
+    if (!best || solved.error < best.error) {
+      best = solved;
+    }
+    onProgress(
+      'Alignment',
+      `STANDARD ${comboIndex + 1} of ${combos.length}`,
+      Math.round(((comboIndex + 1) / Math.max(1, combos.length)) * 100)
+    );
+  }
+
+  return best ? toSolvedModeCandidate(best, palette, contexts) : undefined;
+}
+
+async function solveStandardAcrossCombos(
+  preprocessed: PreprocessedFittedImage,
+  settings: ConverterSettings,
+  contexts: Record<ConverterCharset, CharsetConversionContext>,
+  palette: PaletteColor[],
+  metrics: PaletteMetricData,
+  fontBitsByCharset: ConverterFontBits,
+  onProgress: ProgressCallback,
+  shouldCancel?: () => boolean
+): Promise<SolvedModeCandidate | undefined> {
+  try {
+    const workerSolved = await runStandardConversionInWorkers(
+      preprocessed as any,
+      settings,
+      fontBitsByCharset,
+      onProgress,
+      shouldCancel
+    );
+    if (workerSolved) {
+      return toSolvedModeCandidate(workerSolved, palette, contexts);
+    }
+  } catch (error) {
+    if (error instanceof ConversionCancelledError) {
+      throw error;
+    }
+    console.warn('Standard worker acceleration failed; falling back to the single-threaded path.', error);
+    disposeStandardConverterWorkers();
+  }
+
+  return await solveStandardAcrossCombosSequential(
+    preprocessed,
+    settings,
+    contexts,
+    palette,
+    metrics,
+    onProgress,
+    shouldCancel
+  );
+}
+
+async function solveModeAcrossCombos(
+  mode: 'standard' | 'ecm' | 'mcm',
+  preprocessed: PreprocessedFittedImage,
+  settings: ConverterSettings,
+  contexts: Record<ConverterCharset, CharsetConversionContext>,
+  palette: PaletteColor[],
+  metrics: PaletteMetricData,
+  fontBitsByCharset: ConverterFontBits,
+  onProgress: ProgressCallback,
+  shouldCancel?: () => boolean
+): Promise<SolvedModeCandidate | undefined> {
+  if (mode === 'standard') {
+    return await solveStandardAcrossCombos(
+      preprocessed,
+      settings,
+      contexts,
+      palette,
+      metrics,
+      fontBitsByCharset,
+      onProgress,
+      shouldCancel
+    );
+  }
+
+  const offsets = buildStandardAlignmentOffsets();
   const combos: { charset: ConverterCharset; offset: AlignmentOffset }[] = [];
   for (const offset of offsets) {
     combos.push({ charset: 'upper', offset });
@@ -1708,10 +1764,7 @@ async function solveModeAcrossCombos(
     const context = contexts[combo.charset];
 
     let solved: SolvedModeCandidate | undefined;
-    if (mode === 'standard') {
-      const backgrounds = settings.manualBgColor !== null ? [settings.manualBgColor] : buildBackgroundColorList();
-      solved = await solveStandardForCombo(analysis, context, metrics, settings, backgrounds, palette, scopedProgress, shouldCancel);
-    } else if (mode === 'ecm') {
+    if (mode === 'ecm') {
       solved = await solveEcmForCombo(analysis, context, metrics, settings, palette, scopedProgress, shouldCancel);
     } else {
       solved = await solveMcmForCombo(analysis, context, metrics, settings, palette, scopedProgress, shouldCancel);
@@ -1761,7 +1814,7 @@ export async function convertImage(
     const modeStart = Math.round((modeIndex / activeModes.length) * 100);
     const modeSpan = Math.max(1, Math.round(100 / activeModes.length));
     const scopedProgress = createScopedProgress(onProgress, modeStart, modeSpan);
-    const solved = await solveModeAcrossCombos(mode, preprocessed, settings, contexts, palette, metrics, scopedProgress, shouldCancel);
+    const solved = await solveModeAcrossCombos(mode, preprocessed, settings, contexts, palette, metrics, fontBitsByCharset, scopedProgress, shouldCancel);
     if (!solved) continue;
 
     if (mode === 'standard') {
