@@ -11,12 +11,34 @@ interface MobileShareViewerProps {
   framebuf: Framebuf;
 }
 
+const MONTH_CODES = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const URL_RE = /(https?:\/\/[^\s]+)/g;
+
+function formatDate(date: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!m) return date;
+  const monthIdx = parseInt(m[2], 10) - 1;
+  if (monthIdx < 0 || monthIdx > 11) return date;
+  return `${m[3]}/${MONTH_CODES[monthIdx]}/${m[1]}`;
+}
+
+function renderTextWithLinks(text: string) {
+  const parts = text.split(URL_RE);
+  return parts.map((part, idx) => {
+    if (/^https?:\/\//.test(part)) {
+      return <a key={idx} href={part} target="_blank" rel="noreferrer">{part}</a>;
+    }
+    return <React.Fragment key={idx}>{part}</React.Fragment>;
+  });
+}
+
 export default function MobileShareViewer({ framebuf }: MobileShareViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLandscape, setIsLandscape] = useState(window.matchMedia('(orientation: landscape)').matches);
+  const [showGrid, setShowGrid] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [paletteId, setPaletteId] = useState('colodore');
@@ -259,8 +281,13 @@ export default function MobileShareViewer({ framebuf }: MobileShareViewerProps) 
 
   const mode = framebuf.mcmMode ? 'MCM' : framebuf.ecmMode ? 'ECM' : 'Standard';
   const screenName = framebuf.metadata?.name?.trim() || 'Shared Screen';
+  const author = framebuf.metadata?.author?.trim();
+  const date = framebuf.metadata?.date?.trim();
+  const description = framebuf.metadata?.description?.trim();
+  const detailsLine = [author, date ? formatDate(date) : undefined].filter(Boolean).join(' · ');
+  const infoText = description || 'PETSCII art is old-school 8-bit graphics from the Commodore 64: 40x25 characters, 16 colors, drawn with characters rather than freehand pixels.';
   // In fullscreen, compute canvas size to fill viewport while preserving aspect ratio
-  const canvasStyle = useMemo(() => {
+  const stageStyle = useMemo<React.CSSProperties | undefined>(() => {
     if (!isFullscreen) return undefined;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -271,39 +298,63 @@ export default function MobileShareViewer({ framebuf }: MobileShareViewerProps) 
       transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
     };
   }, [isFullscreen, dims.imgWidth, dims.imgHeight, pan.x, pan.y, zoom]);
+  const normalStageStyle = useMemo<React.CSSProperties>(() => ({
+    aspectRatio: `${dims.imgWidth} / ${dims.imgHeight}`,
+  }), [dims.imgHeight, dims.imgWidth]);
 
   return (
     <div ref={rootRef} className={`${s.page} ${isLandscape ? s.landscape : ''} ${isFullscreen ? s.fullscreen : ''}`}>
       <img src={`${import.meta.env.BASE_URL}assets/petsciishop_logo.png`} alt="Petsciishop" className={s.logo} />
       <div className={s.header}>
         <h1 className={s.title}>{screenName}</h1>
-        <p className={s.subtitle}>Read-only mobile viewer</p>
+        <p className={s.subtitle}>Read-only mobile preview. Open on desktop for the full editor.</p>
       </div>
       <div className={s.controls}>
-        <span className={s.controlsLabel}>Palette</span>
-        <select className={s.select} value={paletteId} onChange={e => setPaletteId(e.target.value)}>
-          {C64_PALETTES.map(p => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-        <button className={s.button} onClick={toggleFullscreen}>
-          {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-        </button>
+        <div className={s.paletteRow}>
+          <span className={s.controlsLabel}>Palette</span>
+          <div className={s.selectWrap}>
+            <select className={s.select} value={paletteId} onChange={e => setPaletteId(e.target.value)}>
+              {C64_PALETTES.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <span className={s.selectChevron} aria-hidden="true">▾</span>
+          </div>
+        </div>
+        <div className={s.buttonRow}>
+          <button
+            className={`${s.button} ${showGrid ? s.buttonActive : ''}`}
+            onClick={() => setShowGrid((prev) => !prev)}
+            type="button"
+          >
+            {showGrid ? 'Hide Grid' : 'Show Grid'}
+          </button>
+          <button className={s.button} onClick={toggleFullscreen}>
+            {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+          </button>
+        </div>
       </div>
       <div ref={canvasWrapRef} className={s.canvasWrap} onDoubleClick={toggleFullscreen}>
-        <canvas
-          ref={canvasRef}
-          className={s.canvas}
-          style={canvasStyle}
-          width={dims.imgWidth}
-          height={dims.imgHeight}
-        />
+        <div className={s.stage} style={isFullscreen ? stageStyle : normalStageStyle}>
+          <canvas
+            ref={canvasRef}
+            className={s.canvas}
+            width={dims.imgWidth}
+            height={dims.imgHeight}
+          />
+          {showGrid && (
+            <div
+              className={s.gridOverlay}
+              style={{ ['--grid-cols' as any]: framebuf.width, ['--grid-rows' as any]: framebuf.height }}
+            />
+          )}
+        </div>
       </div>
       <div className={s.meta}>
-        File: {screenName} · 40x25 · {mode}
+        <div className={s.metaPrimary}>40x25 · {mode}</div>
+        {detailsLine && <div className={s.metaSecondary}>{detailsLine}</div>}
       </div>
-      <p className={s.about}>PETSCII art is old-school 8-bit graphics from the Commodore 64 — 40x25 characters, 16 colors, made entirely with the keyboard. No pixels, just characters.</p>
-      <p className={s.notice}>Mobile viewer only. Open this link on a desktop browser to use the full editor.</p>
+      <p className={s.about}>{renderTextWithLinks(infoText)}</p>
       <a className={s.ghLink} href="https://github.com/rcoenen/Petsciishop" target="_blank" rel="noopener noreferrer">github.com/rcoenen/Petsciishop</a>
     </div>
   );

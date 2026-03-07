@@ -1,5 +1,5 @@
 
-import React, { Component, Fragment, ReactNode, useState } from 'react';
+import React, { Component, Fragment, ReactNode, useEffect, useMemo, useState } from 'react';
 import { connect } from 'react-redux'
 import { Dispatch } from 'redux'
 
@@ -23,6 +23,8 @@ import { loadWorkspaceNoDialog } from '../utils'
 import { loadSDD } from '../utils/importers'
 import MenuBar from '../components/MenuBar'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { parseShareURL } from '../utils/pss1'
+import MobileShareViewer from './MobileShareViewer'
 
 import s from './App.module.css'
 
@@ -37,6 +39,13 @@ function MobileWarning() {
       <button className={s.dismissBtn} onClick={() => setDismissed(true)}>Got it, continue anyway</button>
     </div>
   );
+}
+
+function isMobileDevice(): boolean {
+  const ua = navigator.userAgent.toLowerCase();
+  const uaMobile = /android|iphone|ipad|ipod|mobile/.test(ua);
+  const coarse = window.matchMedia('(pointer: coarse)').matches;
+  return uaMobile || coarse;
 }
 
 interface Dims {
@@ -184,7 +193,49 @@ const ConnectedApp = connect(
   })
 )(AppView);
 
-export default function App() {
+function DesktopApp() {
   useKeyboardShortcuts();
   return <ConnectedApp />;
+}
+
+export default function App() {
+  const [routeState, setRouteState] = useState(() => ({
+    hash: window.location.hash,
+    mobile: isMobileDevice(),
+  }));
+
+  useEffect(() => {
+    const mq = window.matchMedia('(pointer: coarse)');
+    const update = () => {
+      setRouteState({
+        hash: window.location.hash,
+        mobile: isMobileDevice(),
+      });
+    };
+    window.addEventListener('hashchange', update);
+    window.addEventListener('resize', update);
+    mq.addEventListener('change', update);
+    return () => {
+      window.removeEventListener('hashchange', update);
+      window.removeEventListener('resize', update);
+      mq.removeEventListener('change', update);
+    };
+  }, []);
+
+  const sharedFramebuf = useMemo(() => {
+    if (!routeState.mobile || !routeState.hash.startsWith('#/v/')) {
+      return null;
+    }
+    try {
+      return parseShareURL(routeState.hash);
+    } catch {
+      return null;
+    }
+  }, [routeState.hash, routeState.mobile]);
+
+  if (sharedFramebuf) {
+    return <MobileShareViewer framebuf={sharedFramebuf} />;
+  }
+
+  return <DesktopApp />;
 }
