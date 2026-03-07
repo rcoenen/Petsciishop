@@ -184,6 +184,7 @@ const actionCreators = {
   setSelectedPaletteRemap: (remapIdx: number) => createAction('Toolbar/SET_SELECTED_PALETTE_REMAP', remapIdx),
   setShowFileInfoPanel: (flag: boolean) => createAction('Toolbar/SET_SHOW_FILE_INFO_PANEL', flag),
   setCanvasGrid: (flag: boolean) => createAction('Toolbar/SET_CANVAS_GRID', flag),
+  setCanvasGridBrightness: (v: number) => createAction('Toolbar/SET_CANVAS_GRID_BRIGHTNESS', v),
   setPreviewGrid: (flag: boolean) => createAction('Toolbar/SET_PREVIEW_GRID', flag),
   setShowColorModeLabels: (flag: boolean) => createAction('Toolbar/SET_SHOW_COLOR_MODE_LABELS', flag),
   setShortcutsActive: (flag: boolean) => createAction('Toolbar/SET_SHORTCUTS_ACTIVE', flag),
@@ -578,6 +579,7 @@ export class Toolbar {
       showScreenInfo: { show: false },
       showFileInfoPanel: true,
       canvasGrid: false,
+      canvasGridBrightness: 1,
       previewGrid: false,
       showColorModeLabels: true,
       shortcutsActive: true,
@@ -721,6 +723,8 @@ export class Toolbar {
         return updateField(state, 'showFileInfoPanel', action.data);
       case 'Toolbar/SET_CANVAS_GRID':
         return updateField(state, 'canvasGrid', action.data);
+      case 'Toolbar/SET_CANVAS_GRID_BRIGHTNESS':
+        return updateField(state, 'canvasGridBrightness', action.data);
       case 'Toolbar/SET_PREVIEW_GRID':
         return updateField(state, 'previewGrid', action.data);
       case 'Toolbar/SET_SHOW_COLOR_MODE_LABELS':

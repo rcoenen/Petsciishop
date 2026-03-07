@@ -144,6 +144,7 @@ export interface Toolbar {
   showResetConfirm: boolean;
   showFileInfoPanel: boolean;
   canvasGrid: boolean;
+  canvasGridBrightness: number;
   previewGrid: boolean;
   showColorModeLabels: boolean;
   shortcutsActive: boolean;

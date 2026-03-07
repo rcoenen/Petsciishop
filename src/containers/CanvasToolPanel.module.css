@@ -1,0 +1,40 @@
+.gridToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: #ccc;
+  font-size: 12px;
+  user-select: none;
+}
+
+.gridToggle input[type="checkbox"] {
+  accent-color: #888;
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+}
+
+.brightnessLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #aaa;
+  font-size: 12px;
+}
+
+.brightnessText {
+  color: #888;
+}
+
+.brightnessSlider {
+  width: 80px;
+  accent-color: #888;
+  cursor: pointer;
+}
+
+.brightnessValue {
+  width: 30px;
+  color: #888;
+  font-size: 11px;
+}

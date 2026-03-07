@@ -15,6 +15,7 @@ import NewDocumentModeModal from './NewDocumentModeModal'
 import ResetWorkspaceModal from './ResetWorkspaceModal'
 import ScreenInfoModal from './ScreenInfoModal'
 import Editor from './Editor';
+import CanvasToolPanel from './CanvasToolPanel';
 import FileDrop from './FileDrop'
 
 import * as reduxToolbar from '../redux/toolbar'
@@ -160,6 +161,9 @@ class AppView extends Component<AppViewProps> {
           >
             <div className={s.topmenu}>
               <FramebufferTabs />
+            </div>
+            <div className={s.toolpanel}>
+              <CanvasToolPanel />
             </div>
             <div className={s.leftmenubar}>
               <Toolbar />
