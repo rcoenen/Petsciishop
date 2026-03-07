@@ -1,6 +1,7 @@
 
 import React, { Component, Fragment, CSSProperties, PointerEvent, WheelEvent } from 'react';
 import { connect } from 'react-redux'
+import { bindActionCreators } from 'redux'
 import classNames from 'classnames'
 
 import ColorPicker from '../components/ColorPicker'
@@ -11,11 +12,13 @@ import CrtOverlay from '../components/CrtOverlay'
 import { CanvasStatusbar } from '../components/Statusbar'
 
 import CharSelect from './CharSelect'
+import ContextMenuArea from './ContextMenuArea'
 
 import * as framebuf from '../redux/editor'
 import { Framebuffer } from '../redux/editor'
 import * as selectors from '../redux/selectors'
 import * as screensSelectors from '../redux/screensSelectors'
+import * as screens from '../redux/screens'
 import {
   getSettingsIntegerScale,
   getSettingsCrtFilter,
@@ -23,6 +26,7 @@ import {
   getEffectivePaletteId
 } from '../redux/settingsSelectors'
 import * as settings from '../redux/settings'
+import * as ReduxRoot from '../redux/root'
 import { C64_PALETTES } from '../utils/c64Palettes'
 
 
@@ -415,6 +419,9 @@ class FramebufferView extends Component<FramebufferViewProps & FramebufferViewDi
   }
 
   handlePointerDown = (e: any) => {
+    if (e.button !== 0) {
+      return;
+    }
     if (this.props.selectedTool === Tool.Inspector) {
       const { charPos } = this.currentCharPos(e);
       this.altClick(charPos);
@@ -924,6 +931,8 @@ interface EditorProps {
   framebuf: Framebuf | null;
   framebufUIState: FramebufUIState | undefined;
   framebufIndex: number | null;
+  currentScreenIndex: number | null;
+  screensCount: number;
   textColor: number;
   colorPalette: Rgb[];
   paletteId: string;
@@ -936,11 +945,14 @@ interface EditorProps {
 
 interface EditorDispatch {
   Toolbar: toolbar.PropsFromDispatch;
+  Screens: screens.PropsFromDispatch;
   setWorkspacePaletteId: (paletteId: string) => void;
   setBorderColor: (color: number, framebufIndex: number) => void;
   setBackgroundColor: (color: number, framebufIndex: number) => void;
   setExtBgColor: (index: 1|2|3, color: number, framebufIndex: number) => void;
   setMcmColor: (index: 1|2, color: number, framebufIndex: number) => void;
+  shareScreenAsUrl: (framebufId: number) => void;
+  exportScreenAsSdd: (framebufId: number) => void;
 }
 
 type EditorColorTarget = 'border' | 'bg0' | 'char' | 'ecm1' | 'ecm2' | 'ecm3' | 'mcm1' | 'mcm2';
@@ -1071,6 +1083,46 @@ class Editor extends Component<EditorProps & EditorDispatch, EditorState> {
     })
   }
 
+  handleMenuDuplicate = () => {
+    if (this.props.currentScreenIndex === null) {
+      return;
+    }
+    this.props.Screens.cloneScreen(this.props.currentScreenIndex);
+    this.props.Toolbar.setCtrlKey(false);
+  }
+
+  handleMenuRemove = () => {
+    if (this.props.currentScreenIndex === null) {
+      return;
+    }
+    this.props.Screens.removeScreen(this.props.currentScreenIndex);
+    this.props.Toolbar.setCtrlKey(false);
+  }
+
+  handleMenuShareAsUrl = () => {
+    if (this.props.framebufIndex === null) {
+      return;
+    }
+    this.props.shareScreenAsUrl(this.props.framebufIndex);
+    this.props.Toolbar.setCtrlKey(false);
+  }
+
+  handleMenuSaveAsSdd = () => {
+    if (this.props.framebufIndex === null) {
+      return;
+    }
+    this.props.exportScreenAsSdd(this.props.framebufIndex);
+    this.props.Toolbar.setCtrlKey(false);
+  }
+
+  handleMenuScreenInfo = () => {
+    if (this.props.framebufIndex === null) {
+      return;
+    }
+    this.props.Toolbar.setShowScreenInfo({ show: true, framebufIndex: this.props.framebufIndex });
+    this.props.Toolbar.setCtrlKey(false);
+  }
+
   render() {
     if (this.props.framebuf === null
       || this.props.containerSize == null
@@ -1096,6 +1148,35 @@ class Editor extends Component<EditorProps & EditorDispatch, EditorState> {
     const colorTargets = this.buildColorTargets(this.props.framebuf);
     const activeColorTarget = this.resolveActiveColorTarget(colorTargets);
     const selectedTarget = colorTargets.find(t => t.id === activeColorTarget) ?? colorTargets[0];
+    const canvasMenuItems = [
+      {
+        label: 'Duplicate',
+        click: this.handleMenuDuplicate
+      },
+      {
+        label: 'Remove',
+        click: this.handleMenuRemove,
+        enabled: this.props.screensCount > 1
+      },
+      {
+        type: 'separator' as const
+      },
+      {
+        label: 'Share as URL',
+        click: this.handleMenuShareAsUrl
+      },
+      {
+        label: 'Save as .sdd',
+        click: this.handleMenuSaveAsSdd
+      },
+      {
+        type: 'separator' as const
+      },
+      {
+        label: 'Screen Info...',
+        click: this.handleMenuScreenInfo
+      }
+    ];
     const framebufStyle: CSSProperties = {
       width: `${framebufSize.width}px`,
       height: `${framebufSize.height}px`,
@@ -1134,21 +1215,23 @@ class Editor extends Component<EditorProps & EditorDispatch, EditorState> {
         className={styles.editorLayoutContainer}
       >
         <div>
-          <div
-            className={fbContainerClass}
-            style={framebufStyle}>
-            {this.props.framebuf ?
-              <FramebufferCont
-                framebufLayout={framebufSize}
-                framebufUIState={this.props.framebufUIState}
-                onCharPosChanged={this.handleCharPosChanged} /> :
-              null}
-            <CrtOverlay
-              width={framebufSize.width}
-              height={framebufSize.height}
-              filter={crtFilter}
-            />
-          </div>
+          <ContextMenuArea menuItems={canvasMenuItems}>
+            <div
+              className={fbContainerClass}
+              style={framebufStyle}>
+              {this.props.framebuf ?
+                <FramebufferCont
+                  framebufLayout={framebufSize}
+                  framebufUIState={this.props.framebufUIState}
+                  onCharPosChanged={this.handleCharPosChanged} /> :
+                null}
+              <CrtOverlay
+                width={framebufSize.width}
+                height={framebufSize.height}
+                filter={crtFilter}
+              />
+            </div>
+          </ContextMenuArea>
           <CanvasStatusbar
             framebuf={this.props.framebuf}
             isActive={this.state.isActive}
@@ -1233,6 +1316,8 @@ export default connect(
     return {
       framebuf,
       framebufIndex,
+      currentScreenIndex: screensSelectors.getCurrentScreenIndex(state),
+      screensCount: screensSelectors.getScreens(state).length,
       textColor: state.toolbar.textColor,
       selectedTool: state.toolbar.selectedTool,
       colorPalette: getEffectiveColorPalette(state, framebufIndex),
@@ -1245,6 +1330,7 @@ export default connect(
   dispatch => {
     return {
       Toolbar: Toolbar.bindDispatch(dispatch),
+      Screens: bindActionCreators(screens.actions, dispatch),
       setWorkspacePaletteId: (paletteId: string) => {
         dispatch(settings.actions.setSelectedColorPaletteName({ branch: 'saved', name: paletteId }));
         dispatch(settings.actions.setSelectedColorPaletteName({ branch: 'editing', name: paletteId }));
@@ -1258,6 +1344,10 @@ export default connect(
         dispatch(Framebuffer.actions.setExtBgColor({ index, color }, framebufIndex)),
       setMcmColor: (index: 1|2, color: number, framebufIndex: number) =>
         dispatch(Framebuffer.actions.setMcmColor({ index, color }, framebufIndex)),
+      shareScreenAsUrl: (framebufId: number) =>
+        dispatch((ReduxRoot.actions.shareURL(framebufId) as any)),
+      exportScreenAsSdd: (framebufId: number) =>
+        dispatch((ReduxRoot.actions.fileExportAsForFramebuf(utils.formats.sdd, framebufId) as any)),
     }
   }
 )(Editor)
