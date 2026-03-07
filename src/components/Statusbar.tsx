@@ -82,7 +82,7 @@ export class CanvasStatusbar extends PureComponent<CanvasStatusbarProps> {
     const widthHeight = `${framebuf.width}x${framebuf.height}`
     const colorMode = this.getColorModeLabel();
     return (
-      <div style={{paddingTop: '4px', fontSize: '0.8em', display: 'flex', flexDirection:'row', alignItems: 'center'}}>
+      <div style={{fontSize: '0.8em', display: 'flex', flexDirection:'row', alignItems: 'center', padding: '4px 0'}}>
         <FixedWidthCoord axis='X' number={cp !== null ? cp.col : null} />
         <FixedWidthCoord axis='Y' number={cp !== null ? cp.row : null} />
         <FixedWidthCoord axis='C' number={formatScreencode(cc)} numberPixelWidth={60} />
@@ -106,9 +106,10 @@ export class CanvasStatusbar extends PureComponent<CanvasStatusbarProps> {
             onClick={this.props.onFileInfo}
             title='Screen Info'
             style={{
-              marginLeft: 'auto',
+              margin: '0 0 0 auto',
               fontSize: '0.85em',
               padding: '1px 10px',
+              minWidth: 'auto',
               background: 'rgba(255,255,255,0.07)',
               border: '1px solid rgba(255,255,255,0.15)',
               borderRadius: '3px',

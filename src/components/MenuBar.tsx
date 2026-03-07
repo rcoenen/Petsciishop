@@ -322,7 +322,6 @@ export default function MenuBar() {
   const displayItems: ItemDef[] = [
     { label: 'CRT Filter', submenu: crtSubmenu },
     { separator: true },
-    { separator: true },
     { label: 'Color Mode Labels', submenu: [
       { label: `${showColorModeLabels ? '\u2022 ' : '  '}Show`, cmd: 'toggle-color-mode-labels' },
       { label: `${!showColorModeLabels ? '\u2022 ' : '  '}Hide`, cmd: 'toggle-color-mode-labels' },
