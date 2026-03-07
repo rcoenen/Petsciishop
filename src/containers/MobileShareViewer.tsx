@@ -314,7 +314,7 @@ export default function MobileShareViewer({ framebuf }: MobileShareViewerProps) 
           >
             <img src={`${import.meta.env.BASE_URL}assets/petsciishop_logo.png`} alt="Petsciishop" className={s.logo} />
           </a>
-          <p className={s.subtitle}>Mobile preview only. Desktop opens the full editor.</p>
+          <p className={s.subtitle}>Mobile viewer only. Desktop opens the full editor.</p>
         </div>
       </header>
       <div className={s.controls}>
@@ -359,7 +359,12 @@ export default function MobileShareViewer({ framebuf }: MobileShareViewerProps) 
         </div>
       </div>
       <div className={s.infoBlock}>
-        <div className={s.metaPrimary}>40x25 · {mode}</div>
+        <div className={`${s.fieldGroup} ${s.firstFieldGroup}`}>
+          <div className={s.fieldLine}>
+            <span className={s.fieldLabel}>Colormode:</span>{' '}
+            <span className={s.fieldValue}>{mode}</span>
+          </div>
+        </div>
         <div className={s.fieldGroup}>
           <div className={s.fieldLine}>
             <span className={s.fieldLabel}>Name:</span>{' '}

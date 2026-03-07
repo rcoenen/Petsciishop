@@ -160,13 +160,12 @@
   margin-top: 12px;
 }
 
-.metaPrimary {
-  font-size: 13px;
-  color: #c5c5c5;
-}
-
 .fieldGroup {
   margin-top: 10px;
+}
+
+.firstFieldGroup {
+  margin-top: 0;
 }
 
 .fieldLabel {
