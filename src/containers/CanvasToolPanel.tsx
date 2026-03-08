@@ -11,36 +11,24 @@ import { openBezelPreview } from '../utils/bezelPreview';
 import s from './CanvasToolPanel.module.css';
 
 interface Props {
-  canvasGrid: boolean;
   canvasGridBrightness: number;
-  setCanvasGrid: (flag: boolean) => void;
   setCanvasGridBrightness: (v: number) => void;
   onBezelPreview: () => void;
 }
 
-function CanvasToolPanel({ canvasGrid, canvasGridBrightness, setCanvasGrid, setCanvasGridBrightness, onBezelPreview }: Props) {
-  // Slider 1–10, where value N maps to brightness N/10
-  const sliderValue = Math.max(1, Math.round(canvasGridBrightness * 10));
+function CanvasToolPanel({ canvasGridBrightness, setCanvasGridBrightness, onBezelPreview }: Props) {
+  const sliderValue = Math.round(canvasGridBrightness * 10);
 
   return (
     <>
-      <label className={s.gridToggle}>
-        <input
-          type="checkbox"
-          checked={canvasGrid}
-          onChange={e => setCanvasGrid(e.target.checked)}
-        />
-        <span>Grid</span>
-      </label>
-      <label className={`${s.brightnessLabel} ${!canvasGrid ? s.disabled : ''}`}>
-        <span className={s.brightnessText}>Brightness</span>
+      <label className={s.brightnessLabel}>
+        <span className={s.brightnessText}>Grid</span>
         <input
           type="range"
           className={s.brightnessSlider}
-          min={1}
+          min={0}
           max={10}
           step={1}
-          disabled={!canvasGrid}
           value={sliderValue}
           onChange={e => setCanvasGridBrightness(parseInt(e.target.value) / 10)}
         />
@@ -55,12 +43,10 @@ function CanvasToolPanel({ canvasGrid, canvasGridBrightness, setCanvasGrid, setC
 
 export default connect(
   (state: RootState) => ({
-    canvasGrid: state.toolbar.canvasGrid,
     canvasGridBrightness: state.toolbar.canvasGridBrightness,
   }),
   (dispatch: Dispatch) => ({
     ...bindActionCreators({
-      setCanvasGrid: Toolbar.actions.setCanvasGrid,
       setCanvasGridBrightness: Toolbar.actions.setCanvasGridBrightness,
     }, dispatch),
     onBezelPreview: () => (dispatch as any)((dispatch: any, getState: any) => {

@@ -183,7 +183,6 @@ const actionCreators = {
   setShowScreenInfo: (data: { show: boolean, framebufIndex?: number }) => createAction('Toolbar/SET_SHOW_SCREEN_INFO', data),
   setSelectedPaletteRemap: (remapIdx: number) => createAction('Toolbar/SET_SELECTED_PALETTE_REMAP', remapIdx),
   setShowFileInfoPanel: (flag: boolean) => createAction('Toolbar/SET_SHOW_FILE_INFO_PANEL', flag),
-  setCanvasGrid: (flag: boolean) => createAction('Toolbar/SET_CANVAS_GRID', flag),
   setCanvasGridBrightness: (v: number) => createAction('Toolbar/SET_CANVAS_GRID_BRIGHTNESS', v),
   setPreviewGrid: (flag: boolean) => createAction('Toolbar/SET_PREVIEW_GRID', flag),
   setShowColorModeLabels: (flag: boolean) => createAction('Toolbar/SET_SHOW_COLOR_MODE_LABELS', flag),
@@ -315,8 +314,8 @@ export class Toolbar {
               return
             } else if (key === 'g') {
               return dispatch((dispatch, getState) => {
-                const { canvasGrid } = getState().toolbar
-                dispatch(Toolbar.actions.setCanvasGrid(!canvasGrid))
+                const { canvasGridBrightness } = getState().toolbar
+                dispatch(Toolbar.actions.setCanvasGridBrightness(canvasGridBrightness > 0 ? 0 : 1))
               })
             }
           }
@@ -578,8 +577,7 @@ export class Toolbar {
       showImageConverter: false,
       showScreenInfo: { show: false },
       showFileInfoPanel: true,
-      canvasGrid: false,
-      canvasGridBrightness: 1,
+      canvasGridBrightness: 0,
       previewGrid: false,
       showColorModeLabels: true,
       shortcutsActive: true,
@@ -721,8 +719,6 @@ export class Toolbar {
         return updateField(state, 'showScreenInfo', action.data);
       case 'Toolbar/SET_SHOW_FILE_INFO_PANEL':
         return updateField(state, 'showFileInfoPanel', action.data);
-      case 'Toolbar/SET_CANVAS_GRID':
-        return updateField(state, 'canvasGrid', action.data);
       case 'Toolbar/SET_CANVAS_GRID_BRIGHTNESS':
         return updateField(state, 'canvasGridBrightness', action.data);
       case 'Toolbar/SET_PREVIEW_GRID':

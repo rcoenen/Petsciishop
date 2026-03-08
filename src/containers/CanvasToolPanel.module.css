@@ -1,31 +1,9 @@
-.gridToggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  color: #ccc;
-  font-size: 12px;
-  user-select: none;
-}
-
-.gridToggle input[type="checkbox"] {
-  accent-color: #888;
-  width: 13px;
-  height: 13px;
-  cursor: pointer;
-}
-
 .brightnessLabel {
   display: flex;
   align-items: center;
   gap: 6px;
   color: #aaa;
   font-size: 12px;
-}
-
-.disabled {
-  opacity: 0.4;
-  pointer-events: none;
 }
 
 .brightnessText {

@@ -194,8 +194,8 @@ export function dispatchMenuCommand(
       return;
     }
     case 'toggle-preview-grid': {
-      const current = getState().toolbar.canvasGrid;
-      dispatch(Toolbar.actions.setCanvasGrid(!current));
+      const current = getState().toolbar.canvasGridBrightness;
+      dispatch(Toolbar.actions.setCanvasGridBrightness(current > 0 ? 0 : 1));
       return;
     }
     case 'toggle-color-mode-labels': {

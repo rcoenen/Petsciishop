@@ -143,7 +143,6 @@ export interface Toolbar {
   showScreenInfo: { show: boolean, framebufIndex?: number };
   showResetConfirm: boolean;
   showFileInfoPanel: boolean;
-  canvasGrid: boolean;
   canvasGridBrightness: number;
   previewGrid: boolean;
   showColorModeLabels: boolean;

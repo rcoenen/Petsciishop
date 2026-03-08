@@ -218,7 +218,6 @@ interface FramebufferViewProps {
 
   font: Font;
 
-  canvasGrid: boolean;
   canvasGridBrightness: number;
 
   ecmMode?: boolean;
@@ -834,7 +833,7 @@ class FramebufferView extends Component<FramebufferViewProps & FramebufferViewDi
             mcmColor2={this.props.mcmColor2}
           />
           {overlays}
-          {this.props.canvasGrid ? <GridOverlay width={charWidth} height={charHeight} color={`rgba(128, 128, 128, ${this.props.canvasGridBrightness})`} /> : null}
+          {this.props.canvasGridBrightness > 0 ? <GridOverlay width={charWidth} height={charHeight} color={`rgba(128, 128, 128, ${this.props.canvasGridBrightness})`} /> : null}
         </div>
       </div>
     )
@@ -908,7 +907,6 @@ const FramebufferCont = connect(
       spacebarKey: state.toolbar.spacebarKey,
       font,
       colorPalette: getEffectiveColorPalette(state, framebufIndex),
-      canvasGrid: state.toolbar.canvasGrid,
       canvasGridBrightness: state.toolbar.canvasGridBrightness
     }
   },
