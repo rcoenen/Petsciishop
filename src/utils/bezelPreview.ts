@@ -1,5 +1,5 @@
 
-import { FramebufWithFont, RgbPalette } from '../redux/types';
+import { CrtFilter, FramebufWithFont, RgbPalette } from '../redux/types';
 import { framebufToPixels, computeOutputImageDims } from './exporters/util';
 
 const BEZEL_W = 1280;
@@ -9,7 +9,60 @@ const SCREEN_Y = 95;
 const SCREEN_W = 623;
 const SCREEN_H = 441;
 
-export async function openBezelPreview(fb: FramebufWithFont, palette: RgbPalette): Promise<void> {
+function applyBezelCrt(
+  ctx: CanvasRenderingContext2D,
+  filter: CrtFilter,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+) {
+  if (filter === 'none') return;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, width, height);
+  ctx.clip();
+
+  if (filter === 'scanlines' || filter === 'colorTv' || filter === 'bwTv') {
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    for (let lineY = y + 1; lineY < y + height; lineY += 2) {
+      ctx.fillRect(x, lineY, width, 1);
+    }
+  }
+
+  if (filter === 'colorTv' || filter === 'bwTv') {
+    const cx = x + width / 2;
+    const cy = y + height / 2;
+    const radius = Math.max(width, height) / 2;
+    const vignette = ctx.createRadialGradient(cx, cy, radius * 0.4, cx, cy, radius * 1.2);
+    vignette.addColorStop(0, 'rgba(0,0,0,0)');
+    vignette.addColorStop(1, 'rgba(0,0,0,0.7)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(x, y, width, height);
+
+    const noiseAlpha = filter === 'colorTv' ? 0.12 : 0.08;
+    const noisePixels = Math.floor((width * height) / 18);
+    for (let i = 0; i < noisePixels; i++) {
+      const px = x + Math.floor(Math.random() * width);
+      const py = y + Math.floor(Math.random() * height);
+      if (filter === 'colorTv') {
+        const r = Math.floor(Math.random() * 255);
+        const g = Math.floor(Math.random() * 255);
+        const b = Math.floor(Math.random() * 255);
+        ctx.fillStyle = `rgba(${r},${g},${b},${noiseAlpha})`;
+      } else {
+        const v = Math.floor(Math.random() * 255);
+        ctx.fillStyle = `rgba(${v},${v},${v},${noiseAlpha})`;
+      }
+      ctx.fillRect(px, py, 1, 1);
+    }
+  }
+
+  ctx.restore();
+}
+
+export async function openBezelPreview(fb: FramebufWithFont, palette: RgbPalette, crtFilter: CrtFilter = 'none'): Promise<void> {
   // The bezel preview should show the full C64 output frame, including the border.
   const { imgWidth, imgHeight } = computeOutputImageDims(fb, true);
   const pixBuf = framebufToPixels(fb, palette, true);
@@ -26,7 +79,14 @@ export async function openBezelPreview(fb: FramebufWithFont, palette: RgbPalette
   canvas.height = BEZEL_H;
   const ctx = canvas.getContext('2d')!;
   ctx.imageSmoothingEnabled = false;
+  ctx.filter = crtFilter === 'colorTv'
+    ? 'brightness(1.2) contrast(1.2)'
+    : crtFilter === 'bwTv'
+      ? 'brightness(1.4) contrast(1.2) grayscale(1)'
+      : 'none';
   ctx.drawImage(petsciiCanvas, SCREEN_X, SCREEN_Y, SCREEN_W, SCREEN_H);
+  ctx.filter = 'none';
+  applyBezelCrt(ctx, crtFilter, SCREEN_X, SCREEN_Y, SCREEN_W, SCREEN_H);
 
   await new Promise<void>((resolve, reject) => {
     const img = new Image();

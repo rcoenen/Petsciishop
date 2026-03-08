@@ -2,11 +2,11 @@
 import React from 'react';
 import { connect } from 'react-redux';
 import { bindActionCreators, Dispatch } from 'redux';
-import { RootState } from '../redux/types';
+import { CrtFilter, RootState } from '../redux/types';
 import { Toolbar } from '../redux/toolbar';
 import * as selectors from '../redux/selectors';
 import * as screensSelectors from '../redux/screensSelectors';
-import { getEffectiveColorPalette } from '../redux/settingsSelectors';
+import { getEffectiveColorPalette, getSettingsCrtFilter } from '../redux/settingsSelectors';
 import { openBezelPreview } from '../utils/bezelPreview';
 import s from './CanvasToolPanel.module.css';
 
@@ -55,7 +55,8 @@ export default connect(
       if (!fb) return;
       const { font } = selectors.getCurrentFramebufFont(state);
       const palette = getEffectiveColorPalette(state, screensSelectors.getCurrentScreenFramebufIndex(state));
-      openBezelPreview({ ...fb, font }, palette);
+      const crtFilter: CrtFilter = getSettingsCrtFilter(state);
+      openBezelPreview({ ...fb, font }, palette, crtFilter);
     }),
   })
 )(CanvasToolPanel);
