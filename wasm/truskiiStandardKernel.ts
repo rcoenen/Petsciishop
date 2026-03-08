@@ -1,3 +1,18 @@
+/*
+ * TruSkii3000 Standard WASM kernel
+ *
+ * This file is a tiny SIMD helper used by the Standard-mode converter worker.
+ * The TypeScript host prepares one source cell at a time, copies that cell's
+ * weighted pixel-versus-palette error table into this module's linear memory,
+ * then asks the kernel to accumulate those errors for every PETSCII character.
+ *
+ * In practical terms, the output answers:
+ *   "for character N, what is the total cost of drawing its set pixels with
+ *    each of the 16 C64 colors?"
+ *
+ * The rest of the Standard solver still lives in TypeScript. This kernel only
+ * accelerates the hottest matrix-accumulation step.
+ */
 const COLOR_COUNT: i32 = 16;
 const CHAR_COUNT: i32 = 256;
 const PIXEL_COUNT: i32 = 64;

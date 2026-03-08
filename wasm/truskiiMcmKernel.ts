@@ -1,3 +1,18 @@
+/*
+ * TruSkii3000 MCM WASM kernel
+ *
+ * This file is the SIMD scoring helper for multicolor-mode conversion. The
+ * host copies two kinds of error tables into linear memory:
+ *   1. per-pixel errors for hires-style cells
+ *   2. per-bit-pair errors for multicolor cells
+ *
+ * The kernel then walks the flattened charset data and produces:
+ *   - one hires-style set-error row per character
+ *   - four multicolor bit-pair rows per character (00, 01, 10, 11)
+ *
+ * The TypeScript solver uses those matrices later when it evaluates legal MCM
+ * candidates, global colors, and mixed hires/multicolor screens.
+ */
 const COLOR_COUNT: i32 = 16;
 const CHAR_COUNT: i32 = 256;
 const PIXEL_COUNT: i32 = 64;
