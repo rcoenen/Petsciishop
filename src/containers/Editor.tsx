@@ -844,7 +844,9 @@ function computeFramebufLayout(args: {
   containerSize: { width: number, height: number },
   framebufSize: { charWidth: number, charHeight: number },
 }) {
-  const bottomPad = 60;
+  const canvasBorder = 32;
+  const statusbarHeight = 28;
+  const bottomPad = canvasBorder + statusbarHeight;
   const rightPad = 320;
   const { charWidth, charHeight } = args.framebufSize;
   const maxWidth = args.containerSize.width - rightPad;
@@ -1205,7 +1207,7 @@ class Editor extends Component<EditorProps & EditorDispatch, EditorState> {
       <div
         className={styles.editorLayoutContainer}
       >
-        <div>
+        <div className={styles.editorMainColumn}>
           <ContextMenuArea menuItems={canvasMenuItems}>
             <div
               className={fbContainerClass}
@@ -1232,8 +1234,8 @@ class Editor extends Component<EditorProps & EditorDispatch, EditorState> {
             onFileInfo={this.props.framebufIndex !== null ? () => this.props.Toolbar.setShowScreenInfo({ show: true, framebufIndex: this.props.framebufIndex! }) : undefined}
           />
         </div>
-        <div style={{marginLeft: '8px', marginRight: '16px'}}>
-          <div style={{marginBottom: '10px'}}>
+        <div className={styles.editorSidebar}>
+          <div className={styles.editorSidebarTop}>
             <div className={styles.modeBadge}>Mode: {modeLabel}</div>
             <div style={{marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px'}}>
               <span style={{fontSize: '0.75em', color: 'rgb(160,160,160)'}}>Palette:</span>
