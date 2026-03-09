@@ -9,6 +9,8 @@ import {
   convertImage,
   ConversionCancelledError,
   disposeStandardConverterWorkers,
+  setConverterAccelerationMode,
+  ConverterAccelerationMode,
   ConverterAccelerationPath,
   ConverterFontBits,
   ConversionOutputs,
@@ -199,6 +201,7 @@ function buildPreviewSignature(
     lumMatchWeight: settings.lumMatchWeight,
     csfWeight: settings.csfWeight,
     includeTypographic: settings.includeTypographic,
+    accelerationMode: settings.accelerationMode,
     paletteId: settings.paletteId,
     manualBgColor: settings.manualBgColor,
   });
@@ -570,6 +573,7 @@ export default function ImageConverterModal() {
           [mode]: { startedAtMs, completedSeconds: null },
         }));
         setProgress({ stage: '', detail: '', pct: 0 });
+        setConverterAccelerationMode(s.accelerationMode);
 
         const output = await convertImage(
           img,
@@ -872,6 +876,17 @@ export default function ImageConverterModal() {
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
                 <option value="__custom__">Custom</option>
+              </select>
+            </div>
+
+            <div className={styles.settingsRow}>
+              <label>Backend:</label>
+              <select
+                value={settings.accelerationMode}
+                onChange={(e) => updateSetting('accelerationMode', e.target.value as ConverterAccelerationMode)}
+              >
+                <option value='wasm'>WASM</option>
+                <option value='js'>JS</option>
               </select>
             </div>
 

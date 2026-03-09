@@ -25,6 +25,7 @@ import {
   computeHuePreservationBonus,
   hasMinimumContrast,
   isTypographicScreencode,
+  MIN_PAIR_DIFF_RATIO,
 } from './imageConverterHeuristics';
 import {
   computeBinaryHammingDistancesJs,
@@ -237,6 +238,7 @@ export interface ConverterSettings {
   lumMatchWeight: number;
   csfWeight: number;
   includeTypographic: boolean;
+  accelerationMode: ConverterAccelerationMode;
   paletteId: string;
   manualBgColor: number | null;
   outputStandard: boolean;
@@ -244,6 +246,7 @@ export interface ConverterSettings {
   outputMcm: boolean;
 }
 
+export type ConverterAccelerationMode = 'wasm' | 'js';
 export const CONVERTER_DEFAULTS: ConverterSettings = {
   brightnessFactor: 1.1,
   saturationFactor: 1.4,
@@ -251,6 +254,7 @@ export const CONVERTER_DEFAULTS: ConverterSettings = {
   lumMatchWeight: 12,
   csfWeight: 10,
   includeTypographic: true,
+  accelerationMode: 'wasm',
   paletteId: 'colodore',
   manualBgColor: null,
   outputStandard: true,
@@ -273,6 +277,7 @@ export const CONVERTER_PRESETS = [
     lumMatchWeight: 0,
     csfWeight: 0,
     includeTypographic: true,
+    accelerationMode: 'wasm' as ConverterAccelerationMode,
     paletteId: 'colodore',
     manualBgColor: null as number | null,
   },
@@ -1560,7 +1565,7 @@ const _reusableBinaryPairAdjustment = new Float64Array((PIXELS_PER_CELL + 1) * 1
 const _reusableBinaryBrightnessResidual = new Float32Array((PIXELS_PER_CELL + 1) * 16 * 16);
 const _reusableBinaryCsfPenalty = new Float32Array(256);
 const _candidateScreencodeCache = new Map<string, Uint16Array>();
-const _foregroundCandidateCache = new WeakMap<PaletteMetricData, Map<number, Uint8Array[]>>();
+const _foregroundCandidateCache = new WeakMap<PaletteMetricData, Map<string, Uint8Array[]>>();
 
 function binaryMixIndex(setCount: number, bg: number, fg: number): number {
   return (setCount * 16 + bg) * 16 + fg;
@@ -1586,25 +1591,27 @@ function getCandidateScreencodes(charLimit: number, includeTypographic: boolean)
 
 function getForegroundCandidatesByBackground(
   metrics: PaletteMetricData,
-  fgLimit: number
+  fgLimit: number,
+  minContrastRatio: number = MIN_PAIR_DIFF_RATIO
 ): Uint8Array[] {
+  const cacheKey = `${fgLimit}:${minContrastRatio}`;
   const cachedByLimit = _foregroundCandidateCache.get(metrics);
-  if (cachedByLimit?.has(fgLimit)) {
-    return cachedByLimit.get(fgLimit)!;
+  if (cachedByLimit?.has(cacheKey)) {
+    return cachedByLimit.get(cacheKey)!;
   }
 
   const foregroundsByBackground = Array.from({ length: 16 }, (_, bg) => {
     const foregrounds: number[] = [];
     for (let fg = 0; fg < fgLimit; fg++) {
       if (fg === bg) continue;
-      if (!hasMinimumContrast(metrics, fg, bg)) continue;
+      if (minContrastRatio > 0 && !hasMinimumContrast(metrics, fg, bg, minContrastRatio)) continue;
       foregrounds.push(fg);
     }
     return Uint8Array.from(foregrounds);
   });
 
-  const nextByLimit = cachedByLimit ?? new Map<number, Uint8Array[]>();
-  nextByLimit.set(fgLimit, foregroundsByBackground);
+  const nextByLimit = cachedByLimit ?? new Map<string, Uint8Array[]>();
+  nextByLimit.set(cacheKey, foregroundsByBackground);
   if (!cachedByLimit) {
     _foregroundCandidateCache.set(metrics, nextByLimit);
   }
@@ -2505,11 +2512,12 @@ function buildBinaryCandidatePoolsForCellByBackground(
   backgrounds: number[],
   fgLimit: number,
   poolSize: number,
-  scoringKernel?: BinaryCandidateScoringKernel
+  scoringKernel?: BinaryCandidateScoringKernel,
+  minContrastRatio: number = MIN_PAIR_DIFF_RATIO
 ): ScreenCandidate[][] {
   const pools = backgrounds.map(() => [] as ScreenCandidate[]);
   const candidateScreencodes = getCandidateScreencodes(charLimit, settings.includeTypographic);
-  const foregroundsByBackground = getForegroundCandidatesByBackground(metrics, fgLimit);
+  const foregroundsByBackground = getForegroundCandidatesByBackground(metrics, fgLimit, minContrastRatio);
   const scoringTables = buildBinaryCellScoringTables(cell, context, metrics, settings, charLimit);
 
   if (canUseBinaryHammingPath(settings, scoringKernel)) {
@@ -2640,12 +2648,13 @@ async function buildBinaryCandidatePoolsByBackground(
   fgLimit: number,
   poolSize: number,
   scoringKernel?: BinaryCandidateScoringKernel,
-  shouldCancel?: () => boolean
+  shouldCancel?: () => boolean,
+  minContrastRatio: number = MIN_PAIR_DIFF_RATIO
 ): Promise<ScreenCandidate[][][]> {
   const candidatePoolsByBackground = backgrounds.map(() => new Array<ScreenCandidate[]>(cells.length));
   for (let cellIndex = 0; cellIndex < cells.length; cellIndex++) {
     const cellPools = buildBinaryCandidatePoolsForCellByBackground(
-      cells[cellIndex], context, metrics, settings, charLimit, backgrounds, fgLimit, poolSize, scoringKernel
+      cells[cellIndex], context, metrics, settings, charLimit, backgrounds, fgLimit, poolSize, scoringKernel, minContrastRatio
     );
     for (let bi = 0; bi < backgrounds.length; bi++) {
       candidatePoolsByBackground[bi][cellIndex] = cellPools[bi];
@@ -2667,7 +2676,7 @@ function mergeBinaryCandidatePoolsByBackground(
   for (let cellIndex = 0; cellIndex < CELL_COUNT; cellIndex++) {
     const pool: ScreenCandidate[] = [];
     for (let bi = 0; bi < backgrounds.length; bi++) {
-      const backgroundPool = candidatePoolsByBackground[bi][cellIndex];
+      const backgroundPool = candidatePoolsByBackground[backgrounds[bi]][cellIndex];
       for (let candidateIndex = 0; candidateIndex < backgroundPool.length; candidateIndex++) {
         insertTopCandidate(pool, backgroundPool[candidateIndex], poolSize);
       }
@@ -3074,7 +3083,8 @@ async function solveEcmForCombo(
     16,
     ECM_POOL_SIZE,
     scoringKernel,
-    shouldCancel
+    shouldCancel,
+    0 // ECM: disable contrast filter to preserve color diversity with only 4 backgrounds
   );
   let poolTime = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - tPool0;
 
