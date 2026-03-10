@@ -117,9 +117,30 @@ CODEX: The engine scores the complete image under each applicable mode and picks
 Run once before glyph matching, informs everything downstream.
 
 - Load **Colodore's measured C64 palette values** — derived from the full PAL analog signal chain including VIC-II luma output characteristics, the most accurate RGB reference available — and convert to OKLAB. Pepto's palette supported as an alternative.
+- **Build a perceptual distance LUT** for all 16×16 color pairs in OKLAB — used constantly during glyph matching, precomputed once in WASM linear memory
+
+### Standard Mode: Coverage-Aware Background Selection
+
+Standard mode has the hardest constraint: a single global background color (`$D021`) shared by all 1000 cells. Choosing poorly here is catastrophic — if the background is far from the image's dominant brightness, every cell is forced into near-solid blocks (90-100% foreground coverage) just to compensate, killing all character diversity.
+
+TRUSKI3000 solves this with a **coverage extremity penalty scaled by luminance distance**. The coarse background scorer samples cells across the image and, for each candidate background color, penalizes character choices that require extreme coverage (near 0% or 100% of pixels set). The penalty is proportional to the **luminance distance** between the cell's average brightness and the background color in OkLab:
+
+```
+covPenalty = COVERAGE_EXTREMITY_WEIGHT × |cellAvgL − bgL| × (2 × coverageRatio − 1)²
+```
+
+The key insight is that luminance distance is self-calibrating:
+- **Dark images** (e.g. a ninja on a black background): cells have low average luminance, so `|cellAvgL − bgL|` is small for bg=black → near-zero penalty → bg=0 wins correctly
+- **Mid-tone images** (e.g. a brown dog on green grass): cells have medium luminance, so `|cellAvgL − bgL|` is large for bg=black → strong penalty → solver picks a mid-tone background that enables 50% coverage characters, unlocking edge-tracing glyphs and PETSCII texture
+
+This penalty applies **only in the coarse background scorer** (which selects the top finalist backgrounds), not in per-cell solving — once a good background is chosen, the per-cell solver is free to find the best character without artificial constraints.
+
+This technique is specific to Standard mode's single-background constraint. ECM and MCM have per-cell background flexibility (4 registers or 4 colors per cell), so the "forced into solid blocks" problem largely doesn't arise.
+
+### ECM and MCM Register Solving
+
 - **ECM**: solve the 4 global background registers using weighted k-means where weights come from the saliency map — background color error in a salient region costs more
 - **MCM**: solve the shared color register similarly
-- **Build a perceptual distance LUT** for all 16×16 color pairs in OKLAB — used constantly during glyph matching, precomputed once in WASM linear memory
 
 ---
 
@@ -206,10 +227,70 @@ After initial matching, the assigned background colors may not optimally use all
 - **Screen data**: raw PETSCII screen RAM + color RAM bytes — valid for direct loading onto real hardware or emulator
 - **CODEX: Preview**: PNG rendered using actual VIC-II character ROM bitmaps and displayed at a 4:3 presentation aspect rather than as raw 320x200 square pixels
 - **CODEX: Metadata**: chosen screen mode, per-cell color assignments, and error scores — useful for debugging and iterative tuning
-- **Quality metric**: side-by-side perceptual diff in OKLAB ΔE — measurable quality, not just eyeballing
+- **Quality metrics**: a suite of perceptual measurements comparing rendered output against the source, all computed in OkLab color space
+
+### Quality Metrics Suite
+
+Standard image quality metrics (SSIM, PSNR) evaluate pixel-level fidelity — appropriate for photographic compression where every pixel is independently placed. But PETSCII is a **mosaic medium**: the unit of artistic expression is the 8×8 character cell, not the individual pixel. Within a cell, the pixel pattern is constrained to a fixed glyph from a 256-character set. Pixel-level SSIM penalizes within-cell character patterns that don't match source pixels, but from viewing distance those patterns ARE the art.
+
+TRUSKI3000 computes both traditional and PETSCII-specific metrics:
+
+**Per-pixel metrics** (traditional):
+- **lumaRMSE** — L channel RMSE, brightness fidelity
+- **chromaRMSE** — chroma channel RMSE in OkLab, color preservation
+- **meanDeltaE** — mean OkLab Euclidean distance per pixel, overall perceptual error
+- **ssim** — structural similarity on L channel (per 8×8 tile, averaged)
+- **p95DeltaE** — 95th percentile tile ΔE, captures worst-case quality
+
+**Cell-level metrics** (PETSCII-specific):
+- **cellSSIM** — structural similarity computed on a **40×25 cell-averaged luminance grid**. Each 8×8 cell is reduced to its mean luminance, then SSIM is evaluated over this coarser grid using a 3×3 sliding window. This captures whether the overall brightness layout "looks right from viewing distance" without being penalized by within-cell glyph pixel patterns. A high cellSSIM with a lower pixel SSIM means the converter chose characters that create the right impression at the scale PETSCII art is actually viewed — even if individual pixels don't match the source.
+
+cellSSIM is **mode-agnostic** — it works identically for Standard, ECM, and MCM since all three produce the same 40×25 cell grid. This makes it the primary metric for comparing conversion quality across modes.
+
+---
+
+## 8. Systematic Testing and Engine Tuning
+
+TRUSKI3000's scoring pipeline has many interacting parameters (error weights, penalty strengths, admission thresholds). Tuning these by eye is unreliable — a change that improves one image can regress another. The engine uses a systematic harness-driven approach:
+
+### Test Harness
+
+A headless browser harness (`scripts/truski3000-harness/`) converts a manifest of fixture images under controlled settings and records per-image quality metrics. The harness supports:
+
+- **Baseline recording and comparison** — save known-good output, then measure deltas after any code change
+- **Visual side-by-side HTML** — source, baseline, and latest renders with metric delta tables
+- **Normalized delta display** — all metrics presented as "higher = better" with color coding (green = improvement, red = regression), so scanning results is instant
+- **Character utilization diagnostics** — unique character count, usage distribution, detail-split analysis
+- **Color pair gap analysis** — ideal vs chosen color pairs per cell, identifying where the scorer compromises
+
+### Parameter Sweep Methodology
+
+When tuning a constant (e.g. `COVERAGE_EXTREMITY_WEIGHT`), the approach is:
+
+1. **Sweep** the parameter across a range of values
+2. **Run the full fixture suite** at each value
+3. **Record deltas** across all metrics and all images simultaneously
+4. **Look for plateaus** — the optimal value is typically the lowest that reaches a stable good solution, maximizing safety margin
+
+Example: the coverage extremity weight was swept from 3→64. At weight 16, doggy picked a suboptimal background (SSIM regressed). At weight 20+, it found bg=9 (brown) and plateaued — identical results from 20 through 64. All other images showed zero change at any weight. Weight 20 was chosen: lowest value on the plateau.
+
+### Principled Tuning Rules
+
+- **Never tune for a single image** — every change must be evaluated across the full fixture suite
+- **Protect what works** — if ninja (dark image, bg=0 correct) regresses, the change is wrong regardless of how much doggy improves
+- **Self-calibrating mechanisms over manual thresholds** — the lumDistance scaling in coverage extremity adapts automatically to each image's brightness profile, rather than using a fixed threshold that would need per-image tuning
+- **Metrics must capture what matters** — when pixel SSIM failed to reflect perceived quality improvements (doggy had sharper character outlines but lower SSIM), cellSSIM was invented to measure what the eye actually sees at PETSCII viewing distance
 
 ---
 
 ## What Makes It State of the Art
 
-Most existing converters do greedy per-cell matching in RGB with no perceptual weighting, no CSF, no global color solving, and no post-pass refinement. TRUSKI3000 treats it as what it actually is: a constrained combinatorial optimization problem with a perceptual objective function. The WASM core makes the inner loop fast enough that the expensive global passes are tractable in reasonable time on modern hardware. The result should be the highest-fidelity automated PETSCII conversion achievable from a source bitmap.
+Most existing converters do greedy per-cell matching in RGB with no perceptual weighting, no CSF, no global color solving, and no post-pass refinement. TRUSKI3000 treats it as what it actually is: a constrained combinatorial optimization problem with a perceptual objective function. The WASM core makes the inner loop fast enough that the expensive global passes are tractable in reasonable time on modern hardware.
+
+Two techniques in particular distinguish TRUSKI3000 from traditional image compression adapted for character art:
+
+1. **Coverage-aware background selection via luminance distance** — recognizes that PETSCII's single-background constraint creates a fundamentally different optimization landscape than pixel-level dithering. By scaling the coverage penalty to the brightness gap between background and cell content, the engine self-calibrates per image without manual thresholds.
+
+2. **Cell-averaged structural similarity (cellSSIM)** — evaluates quality at the character cell resolution (40×25), the actual unit of artistic expression in PETSCII. This captures "does it look right from viewing distance" rather than "do individual pixels match the source" — a critical distinction for a mosaic medium where within-cell patterns are constrained to a fixed glyph set.
+
+Together with CSF-weighted scoring, brightness debt propagation, and multi-pass global refinement, the result is the highest-fidelity automated PETSCII conversion achievable from a source bitmap.
