@@ -61,7 +61,7 @@ const BLEND_MATCH_WEIGHT = 3.0;
 // in detailed cells where PETSCII character shapes should be leveraged. Without
 // this, full blocks always win on per-pixel error because they show 100% of one
 // color, but they produce a blocky "pixel art" look instead of textured PETSCII art.
-const COVERAGE_EXTREMITY_WEIGHT = 3.0;
+const COVERAGE_EXTREMITY_WEIGHT = 20.0;
 // TRUSKI3000: Soft contrast penalty — replaces the hard hasMinimumContrast gate.
 // Low-contrast pairs (e.g. brown+black) get a penalty that scales linearly from 0
 // at the threshold to SOFT_CONTRAST_PENALTY at zero contrast. This lets brown compete
@@ -934,13 +934,21 @@ function buildBinaryBestErrorByBackground(
   const foregroundsByBackground = getForegroundCandidatesByBackground(metrics);
   const scoringTables = buildBinaryCellScoringTables(cell, context, metrics, settings);
 
-  // Coarse-only coverage extremity: penalize extreme coverage in detailed cells
-  // to steer background selection toward backgrounds that enable PETSCII diversity.
+  // Coarse-only coverage extremity: penalize backgrounds that force extreme
+  // coverage ratios (near 0% or 100%) in cells. Scaled by luminance distance
+  // between cell average and background color — when bg is far from the cell's
+  // brightness, the converter is forced into near-solid blocks, killing PETSCII
+  // character diversity. Dark images (small lumDistance to bg=0) are unaffected.
   // This does NOT affect pool building or per-cell solving.
-  const covDetail = COVERAGE_EXTREMITY_WEIGHT * cell.detailScore;
+  const covBgWeight = new Float64Array(16);
+  for (let bg = 0; bg < 16; bg++) {
+    const lumDistance = Math.abs(cell.avgL - metrics.pL[bg]);
+    covBgWeight[bg] = COVERAGE_EXTREMITY_WEIGHT * lumDistance;
+  }
 
   if (canUseBinaryHammingPath(settings, scoringKernel)) {
     for (let bg = 0; bg < 16; bg++) {
+      const covW = covBgWeight[bg];
       const foregrounds = foregroundsByBackground[bg];
       for (let fgIndex = 0; fgIndex < foregrounds.length; fgIndex++) {
         const fg = foregrounds[fgIndex];
@@ -951,7 +959,7 @@ function buildBinaryBestErrorByBackground(
           const mixIndex = binaryMixIndex(nSet, bg, fg);
           const covRatio = nSet / PIXELS_PER_CELL;
           const extremity = (2 * covRatio - 1) * (2 * covRatio - 1);
-          const total = hammingDistances[ch] + scoringTables.pairAdjustment[mixIndex] + covDetail * extremity;
+          const total = hammingDistances[ch] + scoringTables.pairAdjustment[mixIndex] + covW * extremity;
           if (total < best[bg]) best[bg] = total;
         }
       }
@@ -968,10 +976,10 @@ function buildBinaryBestErrorByBackground(
     const csfPenalty = scoringTables.csfPenaltyByChar[ch];
     const covRatio = nSet / PIXELS_PER_CELL;
     const extremity = (2 * covRatio - 1) * (2 * covRatio - 1);
-    const covPenalty = covDetail * extremity;
     for (let bg = 0; bg < 16; bg++) {
       const bgErr = cell.totalErrByColor[bg] - setErrMatrix[rowBase + bg];
       if (bgErr >= best[bg]) continue;
+      const covPenalty = covBgWeight[bg] * extremity;
       const foregrounds = foregroundsByBackground[bg];
       for (let fgIndex = 0; fgIndex < foregrounds.length; fgIndex++) {
         const fg = foregrounds[fgIndex];

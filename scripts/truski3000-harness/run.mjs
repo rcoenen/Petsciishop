@@ -693,8 +693,13 @@ function printCharacterUtilization(result) {
   }
 }
 
-function formatDelta(value) {
-  return value >= 0 ? `+${value.toFixed(4)}` : value.toFixed(4);
+function formatDelta(value, lowerBetter = false) {
+  // Flip sign for lower-is-better metrics so + always means improvement
+  const display = lowerBetter ? -value : value;
+  const str = display >= 0 ? `+${display.toFixed(4)}` : display.toFixed(4);
+  if (Math.abs(value) < 0.00005) return str;
+  const good = lowerBetter ? value < 0 : value > 0;
+  return good ? `\x1b[32m${str}\x1b[0m` : `\x1b[31m${str}\x1b[0m`;
 }
 
 async function generateComparisonHtml(scenarios) {
@@ -886,14 +891,18 @@ async function compareAgainstBaselines() {
             const cellSSIMDelta = (lq.cellSSIM ?? 0) - (bq.cellSSIM ?? 0);
             const chromaDelta = lq.chromaRMSE - bq.chromaRMSE;
             const lumaDelta = lq.lumaRMSE - bq.lumaRMSE;
+            const deltaEDelta = lq.meanDeltaE - bq.meanDeltaE;
+            const p95Delta = lq.percentile95DeltaE - bq.percentile95DeltaE;
             const changed = !latestSummaryBuf.equals(baselineSummaryBuf);
             const tag = changed ? 'CHANGED' : 'OK';
             console.log(
               `  ${mode}/${fixtureName} [${tag}]: ` +
-              `SSIM ${bq.ssim.toFixed(3)}->${lq.ssim.toFixed(3)} (${formatDelta(ssimDelta)}) ` +
-              `cellSSIM ${(bq.cellSSIM ?? 0).toFixed(3)}->${(lq.cellSSIM ?? 0).toFixed(3)} (${formatDelta(cellSSIMDelta)}) ` +
-              `chromaRMSE ${bq.chromaRMSE.toFixed(4)}->${lq.chromaRMSE.toFixed(4)} (${formatDelta(chromaDelta)}) ` +
-              `lumaRMSE ${bq.lumaRMSE.toFixed(4)}->${lq.lumaRMSE.toFixed(4)} (${formatDelta(lumaDelta)})`
+              `SSIM (${formatDelta(ssimDelta)}) ` +
+              `cellSSIM (${formatDelta(cellSSIMDelta)}) ` +
+              `lumaRMSE (${formatDelta(lumaDelta, true)}) ` +
+              `chromaRMSE (${formatDelta(chromaDelta, true)}) ` +
+              `meanΔE (${formatDelta(deltaEDelta, true)}) ` +
+              `p95ΔE (${formatDelta(p95Delta, true)})`
             );
           }
         } catch {
