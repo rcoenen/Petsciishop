@@ -261,6 +261,17 @@ interface PetsciiResult {
   totalError: number;
 }
 
+type BinaryCandidateTemplate = {
+  coherenceColorMask: number;
+  glyphDirection: CellGradientDirection;
+  edgeLeft: Uint8Array;
+  edgeRight: Uint8Array;
+  edgeTop: Uint8Array;
+  edgeBottom: Uint8Array;
+  repeatH: number;
+  repeatV: number;
+};
+
 type BinaryCellScoringTables = {
   pairAdjustment: Float64Array;
   brightnessResidual: Float32Array;
@@ -779,30 +790,74 @@ function computeSelfTileScale(
   return total / (first.length * maxPairDiff);
 }
 
+const _binaryCandidateTemplateCache = new WeakMap<
+  CharsetConversionContext,
+  WeakMap<PaletteMetricData, Map<number, BinaryCandidateTemplate>>
+>();
+
+function getBinaryCandidateTemplate(
+  context: CharsetConversionContext,
+  metrics: PaletteMetricData,
+  char: number,
+  bg: number,
+  fg: number
+): BinaryCandidateTemplate {
+  let metricsCache = _binaryCandidateTemplateCache.get(context);
+  if (!metricsCache) {
+    metricsCache = new WeakMap<PaletteMetricData, Map<number, BinaryCandidateTemplate>>();
+    _binaryCandidateTemplateCache.set(context, metricsCache);
+  }
+
+  let templateCache = metricsCache.get(metrics);
+  if (!templateCache) {
+    templateCache = new Map<number, BinaryCandidateTemplate>();
+    metricsCache.set(metrics, templateCache);
+  }
+
+  const key = (char << 8) | (bg << 4) | fg;
+  const cached = templateCache.get(key);
+  if (cached) return cached;
+
+  const mask = context.ref[char];
+  const edges = buildBinaryEdges(mask, bg, fg);
+  const template: BinaryCandidateTemplate = {
+    coherenceColorMask: buildBinaryCoherenceColorMask(mask, bg, fg),
+    glyphDirection: context.glyphAtlas.dominantDirection[char] as CellGradientDirection,
+    edgeLeft: edges.edgeLeft,
+    edgeRight: edges.edgeRight,
+    edgeTop: edges.edgeTop,
+    edgeBottom: edges.edgeBottom,
+    repeatH: computeSelfTileScale(edges.edgeRight, edges.edgeLeft, metrics.pairDiff, metrics.maxPairDiff),
+    repeatV: computeSelfTileScale(edges.edgeBottom, edges.edgeTop, metrics.pairDiff, metrics.maxPairDiff),
+  };
+  templateCache.set(key, template);
+  return template;
+}
+
 function makeBinaryCandidate(
-  mask: Uint8Array,
+  context: CharsetConversionContext,
   char: number,
   bg: number,
   fg: number,
-  glyphDirection: CellGradientDirection,
   baseError: number,
   brightnessResidual: number,
-  pairDiff: Float64Array,
-  maxPairDiff: number
+  metrics: PaletteMetricData
 ): ScreenCandidate {
-  const edges = buildBinaryEdges(mask, bg, fg);
-  const coherenceColorMask = buildBinaryCoherenceColorMask(mask, bg, fg);
+  const template = getBinaryCandidateTemplate(context, metrics, char, bg, fg);
   return {
     char,
     fg,
     bg,
     baseError,
     brightnessResidual,
-    coherenceColorMask,
-    glyphDirection,
-    ...edges,
-    repeatH: computeSelfTileScale(edges.edgeRight, edges.edgeLeft, pairDiff, maxPairDiff),
-    repeatV: computeSelfTileScale(edges.edgeBottom, edges.edgeTop, pairDiff, maxPairDiff),
+    coherenceColorMask: template.coherenceColorMask,
+    glyphDirection: template.glyphDirection,
+    edgeLeft: template.edgeLeft,
+    edgeRight: template.edgeRight,
+    edgeTop: template.edgeTop,
+    edgeBottom: template.edgeBottom,
+    repeatH: template.repeatH,
+    repeatV: template.repeatV,
   };
 }
 
@@ -1165,15 +1220,13 @@ function buildBinaryCandidatePoolsForCell(
             insertTopCandidate(
               pool,
               makeBinaryCandidate(
-                context.ref[ch],
+                context,
                 ch,
                 bg,
                 fg,
-                context.glyphAtlas.dominantDirection[ch] as CellGradientDirection,
                 total,
                 scoringTables.brightnessResidual[mixIndex],
-                metrics.pairDiff,
-                metrics.maxPairDiff
+                metrics
               ),
               poolSize
             );
@@ -1187,15 +1240,13 @@ function buildBinaryCandidatePoolsForCell(
       const bg = backgrounds[bi] ?? 0;
       const fg = bg === 0 ? 1 : 0;
       pools[bi] = [makeBinaryCandidate(
-        context.ref[32],
+        context,
         32,
         bg,
         fg,
-        context.glyphAtlas.dominantDirection[32] as CellGradientDirection,
         Infinity,
         0,
-        metrics.pairDiff,
-        metrics.maxPairDiff
+        metrics
       )];
     }
 
@@ -1239,15 +1290,13 @@ function buildBinaryCandidatePoolsForCell(
         const brightnessResidual = cell.avgL - metrics.binaryMixL[mixIndex];
         pool.push(
           makeBinaryCandidate(
-            context.ref[ch],
+            context,
             ch,
             bg,
             fg,
-            context.glyphAtlas.dominantDirection[ch] as CellGradientDirection,
             total,
             brightnessResidual,
-            metrics.pairDiff,
-            metrics.maxPairDiff
+            metrics
           )
         );
       }
@@ -1307,15 +1356,13 @@ function buildBinaryCandidatePoolsForCell(
             insertTopCandidate(
               pool,
               makeBinaryCandidate(
-                context.ref[ch],
+                context,
                 ch,
                 bg,
                 fg,
-                context.glyphAtlas.dominantDirection[ch] as CellGradientDirection,
                 total,
                 scoringTables.brightnessResidual[mixIndex],
-                metrics.pairDiff,
-                metrics.maxPairDiff
+                metrics
               ),
               poolSize
             );
@@ -1398,15 +1445,13 @@ function buildBinaryCandidatePoolsForCell(
           insertTopCandidate(
             pool,
             makeBinaryCandidate(
-              context.ref[ch],
+              context,
               ch,
               bg,
               fg,
-              context.glyphAtlas.dominantDirection[ch] as CellGradientDirection,
               total,
               brightnessResidual,
-              metrics.pairDiff,
-              metrics.maxPairDiff
+              metrics
             ),
             poolSize
           );
@@ -1421,15 +1466,13 @@ function buildBinaryCandidatePoolsForCell(
     const bg = backgrounds[bi] ?? 0;
     const fg = bg === 0 ? 1 : 0;
     pools[bi] = [makeBinaryCandidate(
-      context.ref[32],
+      context,
       32,
       bg,
       fg,
-      context.glyphAtlas.dominantDirection[32] as CellGradientDirection,
       Infinity,
       0,
-      metrics.pairDiff,
-      metrics.maxPairDiff
+      metrics
     )];
   }
 
