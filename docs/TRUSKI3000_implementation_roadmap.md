@@ -72,22 +72,40 @@ Last updated: 2026-03-10
 |---|---------|--------|-------|
 | 5.1 | **XOR + popcount Hamming path** | ⚠️ Implemented, disabled | `computeBinaryHammingDistancesJs()` in `imageConverterBitPacking.ts`. Disabled because set-error-matrix produces better quality (`ENABLE_EXPERIMENTAL_HAMMING_FAST_PATH=false`) |
 | 5.2 | **Distance LUT in WASM linear memory** | ✅ | Host uploads `pairDiff` into WASM linear memory once per kernel instance; kernels read it directly thereafter |
-| 5.3 | **Full WASM kernel buildout** | ⚠️ Partial | Only `computeSetErrs` ported to WASM (f32x4 SIMD). Currently **slower than JS** — needs profiling. Auto-detection falls back to JS when WASM is slower |
+| 5.3 | **Full WASM kernel buildout** | ⚠️ Partial | Narrow kernel groundwork exists (`computeSetErrs`, resident LUTs, pool/solve helpers), but ECM/MCM still rely on the older hybrid path and the Hamming fast path remains disabled |
 
-**Status: current WASM work is groundwork, not the end state. JS remains the practical reference path today, but the long-term performance target is a WASM-first engine.**
+**Status: current WASM work is groundwork, not the end state. Standard has now crossed into a WASM-first path and benchmarks at 82.10% faster than JS-only across the accepted six-fixture Standard set, but ECM/MCM still remain on the older hybrid path.**
 
 ---
 
-## Phase 6 — WASM-First Engine Migration ❌ NOT STARTED
+## Phase 6 — WASM-First Engine Migration ⚠️ PARTIAL
 
 The capstone: move the full conversion engine into WASM while keeping JavaScript as UI, orchestration, and result-plumbing only.
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
-| 6.1 | **Standard full solver core in WASM** | ❌ Missing | Coarse background ranking, candidate pool construction, screen solve passes, and refinement should run in WASM |
+| 6.1 | **Standard full solver core in WASM** | ⚠️ Partial | Resident state, host API, coarse background ranking, candidate pools, iterative solve passes, finalization, and wildcard admission are now in WASM. Remaining tail: the last Standard refinement/post-pass logic still in JS |
 | 6.2 | **ECM/MCM full solver cores in WASM** | ❌ Missing | ECM register solving, MCM triple solving, legal hires-within-MCM behavior, and final cell solves should run in WASM |
-| 6.3 | **Resident solver state in WASM memory** | ❌ Missing | Source planes, glyph metadata, distance LUTs, and working buffers should stay resident in linear memory across a conversion |
-| 6.4 | **Progress/result bridge + fallback reduction** | ❌ Missing | JS should receive compact progress updates and result buffers while the WASM path becomes the main engine implementation |
+| 6.3 | **Resident solver state in WASM memory** | ⚠️ Partial | Standard source planes, LUT data, candidate buffers, and screen buffers are resident. Equivalent ECM/MCM residency still missing |
+| 6.4 | **Progress/result bridge + fallback reduction** | ⚠️ Partial | Standard progress/result plumbing is already bridged through the worker/kernel boundary, but JS still owns the remaining Standard tail and all ECM/MCM solver logic |
+
+### Measured Standard Benchmark
+
+Current exact benchmark on the accepted six-fixture Standard set (`--acceleration js` vs `--acceleration wasm`, 1 iteration each):
+
+| Fixture | JS only | WASM only | Faster |
+|---------|---------|-----------|--------|
+| `doggy.png` | `30277.7ms` | `6022.1ms` | **80.11%** (`5.03x`) |
+| `house-a.png` | `30700.7ms` | `5008.4ms` | **83.69%** (`6.13x`) |
+| `ninja-a.png` | `31610.9ms` | `4827.3ms` | **84.73%** (`6.55x`) |
+| `petsciishop_logo.png` | `29198.9ms` | `6488.6ms` | **77.78%** (`4.50x`) |
+| `skeletor.png` | `28410.3ms` | `4640.1ms` | **83.67%** (`6.12x`) |
+| `slayer_multi_color.png` | `32478.4ms` | `5720.9ms` | **82.39%** (`5.68x`) |
+
+Weighted total:
+- JS only: `182676.9ms`
+- WASM only: `32707.4ms`
+- Net speedup: **82.10% faster** (`5.59x`)
 
 ---
 
@@ -99,7 +117,7 @@ The capstone: move the full conversion engine into WASM while keeping JavaScript
 | 2. Foundation | ✅ Complete | Detail scores, gradient directions, full glyph atlas |
 | 3. Perceptual Scoring | ✅ Complete | CSF, saliency-weighted palette solve, ECM re-solve, edge continuity, blend bonus, coverage extremity, wildcards |
 | 4. Output & Measurement | ✅ Complete | Full quality metrics suite + cellSSIM + test harness + per-cell metadata export + 4:3 preview |
-| 5. WASM Performance | ⚠️ ~35% | Hamming path, parity harness, benchmarks, and LUT residency groundwork exist, but JS still wins on most workloads |
-| 6. WASM-First Migration | ❌ 0% | Move the full solver pipeline and resident state into WASM |
+| 5. WASM Performance | ⚠️ ~60% | Groundwork is in place and Standard now shows a strong WASM win, but ECM/MCM still need parity/perf work and the hybrid path remains partly alive |
+| 6. WASM-First Migration | ⚠️ ~45% | Standard is largely migrated into WASM; ECM/MCM and the last Standard refinement tail remain |
 
-**Current engine state: ~90% of spec implemented with all major perceptual features active. Remaining work is ECM/MCM quality polish plus the WASM endgame: finish Phase 5 groundwork and then move the full solver pipeline into WASM in Phase 6.**
+**Current engine state: ~90% of spec implemented with all major perceptual features active. Standard is now materially WASM-first and benchmarks 82.10% faster than JS-only; remaining work is ECM/MCM quality polish plus completing the ECM/MCM and refinement-side WASM migration.**

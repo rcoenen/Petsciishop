@@ -76,7 +76,7 @@ Last updated: 2026-03-10
 | Candidate pruning via contrast LUT | **DONE** | imageConverterHeuristics.ts | `hasMinimumContrast()` with `MIN_PAIR_DIFF_RATIO=0.16` threshold |
 | Set-error-matrix scoring | **DONE** | imageConverterStandardCore.ts | Primary scoring path: per-pixel weighted error accumulated over set positions |
 | XOR + popcount Hamming path | **DONE** | imageConverterBitPacking.ts | `computeBinaryHammingDistancesJs()` implemented but **disabled** (`ENABLE_EXPERIMENTAL_HAMMING_FAST_PATH=false`) — set-error path produces better results |
-| WASM kernel (computeSetErrs) | **DONE** | wasm/truskiiBinaryKernel.ts | f32x4 SIMD for error accumulation. Currently **slower than JS** on most workloads |
+| WASM kernel (computeSetErrs) | **DONE** | wasm/truskiiBinaryKernel.ts | f32x4 SIMD for error accumulation. The old narrow-kernel path was slower in isolation, but the current Standard WASM-first path now benchmarks **82.10% faster than JS-only** across the six-fixture Standard set |
 | CSF-weighted glyph scoring | **DONE** | imageConverterStandardCore.ts, imageConverterHeuristics.ts | `computeCsfPenalty()` — penalizes high-freq glyphs in smooth regions, relieved by blend quality (`BLEND_CSF_RELIEF=1.5`) |
 | Directional alignment bonus | **DONE** | imageConverterHeuristics.ts, imageConverterStandardCore.ts | `computeDirectionalAlignmentBonus()` — rewards glyphs matching cell gradient direction (`EDGE_ALIGNMENT_WEIGHT=14.0`) |
 | Blend match bonus | **DONE** | imageConverterStandardCore.ts | Standalone reward for fg/bg pairs whose perceptual blend matches source color (`BLEND_MATCH_WEIGHT=3.0`) |
@@ -175,13 +175,20 @@ All constants in `imageConverterStandardCore.ts`:
 11. **Expand dedicated MCM tuning scenario sets** — Baselines now exist for the shared six-fixture set; next step is richer MCM-specific tuning scenarios rather than basic mode coverage
 
 ### Phase 6 — WASM-First Engine Migration
-12. **Standard full solver core in WASM** — Move coarse background ranking, candidate scoring, screen solve passes, and refinement out of JS and into WASM
+12. **Standard full solver core in WASM** — **PARTIAL**. Resident state, host API, coarse background ranking, candidate scoring/pool construction, iterative solve passes, finalization, and wildcard admission are in WASM. Remaining tail: the last Standard refinement/post-pass logic
 13. **ECM/MCM full solver cores in WASM** — Move register/triple ranking, legal hires-within-MCM solving, and final cell assignment into WASM
-14. **Resident solver state in WASM memory** — Keep source planes, glyph metadata, pairDiff/LUT data, and working buffers resident in WASM instead of round-tripping per-cell state through JS
-15. **Progress/result bridge + JS fallback reduction** — JS should orchestrate workers/UI only, receiving compact progress events and result buffers from WASM while fallback JS solvers are reduced over time
+14. **Resident solver state in WASM memory** — **PARTIAL**. Standard source planes, pairDiff/LUT data, candidate buffers, and screen-state buffers are resident in WASM. Equivalent ECM/MCM residency remains
+15. **Progress/result bridge + JS fallback reduction** — **PARTIAL**. Standard progress/result bridging exists, but JS still owns the last Standard tail and all ECM/MCM solving
 
 ### Performance (Phase 5 groundwork)
-16. **WASM kernel performance** — Current WASM is slower than JS; needs profiling and optimization
+16. **WASM kernel performance** — Standard is now materially faster on the WASM-first path. Exact benchmark on the accepted six-fixture Standard set:
+   - `doggy.png`: `30277.7ms -> 6022.1ms` = **80.11% faster**
+   - `house-a.png`: `30700.7ms -> 5008.4ms` = **83.69% faster**
+   - `ninja-a.png`: `31610.9ms -> 4827.3ms` = **84.73% faster**
+   - `petsciishop_logo.png`: `29198.9ms -> 6488.6ms` = **77.78% faster**
+   - `skeletor.png`: `28410.3ms -> 4640.1ms` = **83.67% faster**
+   - `slayer_multi_color.png`: `32478.4ms -> 5720.9ms` = **82.39% faster**
+   - weighted total: `182676.9ms -> 32707.4ms` = **82.10% faster** (`5.59x`)
 17. **Full parity coverage for WASM paths** — Expand parity validation from targeted cases into stable mode-wide coverage before Phase 6 migration
 
 ### Quality polish (ongoing)
