@@ -178,6 +178,7 @@ export interface StandardCandidateScoringKernel {
   solveSelectionWithNeighborPasses?(
     counts: Uint8Array,
     chars: Uint8Array,
+    fgs: Uint8Array,
     baseErrors: Float64Array,
     brightnessResiduals: Float64Array,
     repeatH: Float64Array,
@@ -190,6 +191,14 @@ export interface StandardCandidateScoringKernel {
     vBoundaryDiffs: Float32Array,
     passCount: number
   ): Uint8Array;
+  finalizeSelection?(
+    selectedIndices: Uint8Array
+  ): {
+    screencodes: Uint8Array;
+    colors: Uint8Array;
+    bgIndices: Uint8Array;
+    totalError: number;
+  };
 }
 
 export interface StandardPreprocessedImage {
@@ -809,6 +818,8 @@ const _candidateScreencodeCache = new Map<string, Uint16Array>();
 const _foregroundCandidateCache = new WeakMap<PaletteMetricData, Map<number, Uint8Array[]>>();
 const _reusableSolveCounts = new Uint8Array(CELL_COUNT);
 const _reusableSolveChars = new Uint8Array(CELL_COUNT * 16);
+const _reusableSolveFgs = new Uint8Array(CELL_COUNT * 16);
+const _reusableSelectedIndicesU8 = new Uint8Array(CELL_COUNT);
 const _reusableSolveBaseErrors = new Float64Array(CELL_COUNT * 16);
 const _reusableSolveBrightnessResiduals = new Float64Array(CELL_COUNT * 16);
 const _reusableSolveRepeatH = new Float64Array(CELL_COUNT * 16);
@@ -1502,6 +1513,7 @@ function trySolveSelectionWithKernel(
       const flatIndex = cellIndex * 16 + candidateIndex;
       const edgeBase = flatIndex * 8;
       _reusableSolveChars[flatIndex] = candidate.char;
+      _reusableSolveFgs[flatIndex] = candidate.fg;
       _reusableSolveBaseErrors[flatIndex] = candidate.baseError;
       _reusableSolveBrightnessResiduals[flatIndex] = candidate.brightnessResidual;
       _reusableSolveRepeatH[flatIndex] = candidate.repeatH;
@@ -1516,6 +1528,7 @@ function trySolveSelectionWithKernel(
   const wasmSelectedIndices = scoringKernel.solveSelectionWithNeighborPasses(
     _reusableSolveCounts,
     _reusableSolveChars,
+    _reusableSolveFgs,
     _reusableSolveBaseErrors,
     _reusableSolveBrightnessResiduals,
     _reusableSolveRepeatH,
@@ -1732,11 +1745,23 @@ async function solveScreen(
   runColorCoherencePass(candidatePools, selectedIndices, selected, analysis, metrics);
   runEdgeContinuityPass(candidatePools, selectedIndices, selected, analysis, metrics);
 
+  if (scoringKernel?.finalizeSelection) {
+    for (let cellIndex = 0; cellIndex < CELL_COUNT; cellIndex++) {
+      _reusableSelectedIndicesU8[cellIndex] = selectedIndices[cellIndex];
+    }
+    const finalized = scoringKernel.finalizeSelection(_reusableSelectedIndicesU8);
+    return {
+      screencodes: Array.from(finalized.screencodes),
+      colors: Array.from(finalized.colors),
+      bgIndices: Array.from(finalized.bgIndices),
+      totalError: finalized.totalError,
+    };
+  }
+
   const screencodes = new Array<number>(CELL_COUNT);
   const colors = new Array<number>(CELL_COUNT);
   const bgIndices = new Array<number>(CELL_COUNT).fill(0);
   let totalError = 0;
-
   for (let cellIndex = 0; cellIndex < CELL_COUNT; cellIndex++) {
     const candidate = selected[cellIndex];
     screencodes[cellIndex] = candidate.char;

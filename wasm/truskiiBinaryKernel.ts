@@ -99,6 +99,7 @@ const standardThresholdLoScratch = new Uint32Array(PAIR_DIFF_COUNT);
 const standardThresholdHiScratch = new Uint32Array(PAIR_DIFF_COUNT);
 const standardSolveCounts = new Uint8Array(CELL_COUNT);
 const standardSolveChars = new Uint8Array(STANDARD_SOLVE_CANDIDATE_COUNT);
+const standardSolveFgs = new Uint8Array(STANDARD_SOLVE_CANDIDATE_COUNT);
 const standardSolveBaseErrors = new Float64Array(STANDARD_SOLVE_CANDIDATE_COUNT);
 const standardSolveBrightnessResiduals = new Float64Array(STANDARD_SOLVE_CANDIDATE_COUNT);
 const standardSolveRepeatH = new Float64Array(STANDARD_SOLVE_CANDIDATE_COUNT);
@@ -110,6 +111,7 @@ const standardSolveEdgeBottom = new Uint8Array(STANDARD_SOLVE_EDGE_VALUE_COUNT);
 const standardSolveHBoundaryDiffs = new Float32Array(H_BOUNDARY_DIFF_COUNT);
 const standardSolveVBoundaryDiffs = new Float32Array(V_BOUNDARY_DIFF_COUNT);
 const standardSolveSelectedIndices = new Uint8Array(CELL_COUNT);
+const standardSolveTotalError = new Float64Array(1);
 
 export function getWeightedPixelErrorsPtr(): usize {
   return weightedPixelErrors.dataStart;
@@ -247,6 +249,10 @@ export function getStandardSolveCharsPtr(): usize {
   return standardSolveChars.dataStart;
 }
 
+export function getStandardSolveFgsPtr(): usize {
+  return standardSolveFgs.dataStart;
+}
+
 export function getStandardSolveBaseErrorsPtr(): usize {
   return standardSolveBaseErrors.dataStart;
 }
@@ -289,6 +295,10 @@ export function getStandardSolveVBoundaryDiffsPtr(): usize {
 
 export function getStandardSolveSelectedIndicesPtr(): usize {
   return standardSolveSelectedIndices.dataStart;
+}
+
+export function getStandardSolveTotalErrorPtr(): usize {
+  return standardSolveTotalError.dataStart;
 }
 
 export function computeSetErrs(): void {
@@ -716,4 +726,42 @@ export function computeStandardSolveSelection(passCount: i32): void {
       standardSolveSelectedIndices[cellIndex] = <u8>bestIndex;
     }
   }
+}
+
+export function finalizeStandardSolveSelection(): void {
+  let totalError = 0.0;
+
+  for (let cellIndex: i32 = 0; cellIndex < CELL_COUNT; cellIndex++) {
+    const candidateIndex = <i32>standardSolveSelectedIndices[cellIndex];
+    const flatIndex = standardSolveFlatIndex(cellIndex, candidateIndex);
+    standardScreenCodes[cellIndex] = standardSolveChars[flatIndex];
+    standardColors[cellIndex] = standardSolveFgs[flatIndex];
+    standardBgIndices[cellIndex] = 0;
+    totalError += standardSolveBaseErrors[flatIndex];
+
+    const cx = cellIndex % GRID_WIDTH;
+    const cy = cellIndex / GRID_WIDTH;
+    if (cx > 0) {
+      const leftIndex = <i32>standardSolveSelectedIndices[cellIndex - 1];
+      totalError += computeStandardNeighborPenalty(
+        standardSolveFlatIndex(cellIndex - 1, leftIndex),
+        flatIndex,
+        cy,
+        cx - 1,
+        true
+      );
+    }
+    if (cy > 0) {
+      const topIndex = <i32>standardSolveSelectedIndices[cellIndex - GRID_WIDTH];
+      totalError += computeStandardNeighborPenalty(
+        standardSolveFlatIndex(cellIndex - GRID_WIDTH, topIndex),
+        flatIndex,
+        cy - 1,
+        cx,
+        false
+      );
+    }
+  }
+
+  standardSolveTotalError[0] = totalError;
 }
