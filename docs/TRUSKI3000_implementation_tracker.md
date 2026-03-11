@@ -174,6 +174,9 @@ All constants in `imageConverterStandardCore.ts`:
   - The final jump to the accepted current `doggy` output came from the shared ECM solve/parity refactor in `59bc36e`
   - This drift is not caused by later WASM progress/result bridge work (`6.4b`/`6.4c`)
 - `house-a` current ECM output is also preferred over baseline, but its bg register set stayed `[9,15,0,12]`; the gain is per-cell candidate quality, not coarse bg-set selection.
+- The accepted ECM baselines were refreshed on 2026-03-11 after targeted explicit `js` vs `wasm` parity passed on both fixtures:
+  - `doggy`: `upper`, bg `[11,12,7,15]`, `qualityMeanDeltaE 0.095247`, `SSIM 0.520048`, `cellSSIM 0.851185`
+  - `house-a`: `upper`, bg `[9,15,0,12]`, `qualityMeanDeltaE 0.111238`, `SSIM 0.444943`, `cellSSIM 0.79293`
 - Current `doggy` color diagnostics suggest the remaining ECM headroom is reducing gray/black over-selection in detailed tiles:
   - underused vs ideal: `lgray`, `brown`, `white`, `orange`, `yellow`, `green`
   - overused vs ideal: `black`, `dgray`, `mgray`

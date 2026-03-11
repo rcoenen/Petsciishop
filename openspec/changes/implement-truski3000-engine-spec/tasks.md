@@ -48,6 +48,7 @@
 - [ ] 6.4d Reduce JS fallback paths to explicit unavailable/debug paths and validate milestone canaries before any default-path change
   - CODEX update (2026-03-11): removed the old `auto` backend mode, made `js` the explicit reference path, and stopped silent `wasm -> js` worker downgrades in the normal conversion/harness flow. Stable canaries passed for ECM `ninja-a` (`js` and `wasm`) and MCM `slayer_multi_color` (`wasm`).
   - CODEX update (2026-03-11): the Image Converter modal now surfaces explicit `wasm` failures to the user and points them to the manual `js` fallback instead of failing only in the console.
+  - CODEX update (2026-03-11): refreshed the accepted ECM baselines for `doggy` and `house-a` after targeted explicit `js` vs `wasm` parity passed on both fixtures. The broader explicit-backend milestone sweep remains a separate gate.
 
 CODEX: Phase 6 execution policy:
 - Use targeted canary validation while iterating on a slice, not the full fixture matrix.
