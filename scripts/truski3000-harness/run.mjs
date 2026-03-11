@@ -486,7 +486,9 @@ async function runBackendParity(page, scenarios) {
       continue;
     }
 
-    const summaryMatches = JSON.stringify(jsSummary) === JSON.stringify(wasmSummary);
+    const summaryMatches =
+      JSON.stringify(stripVolatileSummaryFields(jsSummary)) ===
+      JSON.stringify(stripVolatileSummaryFields(wasmSummary));
     const previewMatches = jsPreview === wasmPreview;
 
     parityResults.push({
@@ -527,10 +529,11 @@ function printQualityScores(result) {
   for (const [mode, summary] of Object.entries(result.summaries)) {
     if (!summary?.imageQuality) continue;
     const q = summary.imageQuality;
+    const conversionMs = summary.conversionMs ?? result.elapsedMs;
     console.log(
       `  ${mode} quality: SSIM=${q.ssim.toFixed(3)} cellSSIM=${(q.cellSSIM ?? 0).toFixed(3)} lumaRMSE=${q.lumaRMSE.toFixed(4)} ` +
       `chromaRMSE=${q.chromaRMSE.toFixed(4)} meanDeltaE=${q.meanDeltaE.toFixed(4)} ` +
-      `p95DeltaE=${q.percentile95DeltaE.toFixed(4)}`
+      `p95DeltaE=${q.percentile95DeltaE.toFixed(4)} timeMs=${conversionMs.toFixed(2)}`
     );
   }
 }
@@ -702,8 +705,31 @@ function formatDelta(value, lowerBetter = false) {
   return good ? `\x1b[32m${str}\x1b[0m` : `\x1b[31m${str}\x1b[0m`;
 }
 
+function stripVolatileSummaryFields(summary) {
+  if (!summary) return summary;
+  const { conversionMs, conversionSeconds, ...stable } = summary;
+  return stable;
+}
+
+function formatModeLabel(mode) {
+  switch (mode) {
+    case 'standard':
+      return 'STD (Standard)';
+    case 'ecm':
+      return 'ECM (Extended Color Mode)';
+    case 'mcm':
+      return 'MCM (Multicolor Mode)';
+    default:
+      return String(mode);
+  }
+}
+
 async function generateComparisonHtml(scenarios) {
-  const reportPath = path.resolve(outputRoot, 'comparison.html');
+  const uniqueModes = [...new Set(scenarios.map(scenario => scenario.mode))];
+  const modeSuffix = uniqueModes.length === 1 ? uniqueModes[0] : 'multimode';
+  const reportBaseName = outputDirName === 'latest' ? 'baselines' : outputDirName;
+  const reportFileName = `${reportBaseName}_${modeSuffix}.html`;
+  const reportPath = path.resolve(outputRoot, reportFileName);
   const rows = [];
 
   for (const scenario of scenarios) {
@@ -725,9 +751,10 @@ async function generateComparisonHtml(scenarios) {
     const d = val - base;
     if (Math.abs(d) < 0.00005) return '<span class="neutral">(=)</span>';
     const good = lowerBetter ? d < 0 : d > 0;
-    const sign = d > 0 ? '+' : '';
+    const display = lowerBetter ? -d : d;
+    const sign = display > 0 ? '+' : '';
     const cls = good ? 'better' : 'worse';
-    return '<span class="' + cls + '">(' + sign + d.toFixed(4) + ')</span>';
+    return '<span class="' + cls + '">(' + sign + display.toFixed(4) + ')</span>';
   }
 
   function metricRow(name, latestVal, baseVal, decimals, lowerBetter) {
@@ -756,6 +783,12 @@ async function generateComparisonHtml(scenarios) {
       if (summary.mcmSharedColors && summary.mcmSharedColors.some(function(c) { return c > 0; })) {
         s += '<tr><td class="cl">mcm shared</td><td>[' + summary.mcmSharedColors.join(', ') + ']</td></tr>';
       }
+      if (summary.conversionMs != null) {
+        s += '<tr><td class="cl">time ms</td><td>' + summary.conversionMs.toFixed(2) + '</td></tr>';
+      }
+      if (summary.conversionSeconds != null) {
+        s += '<tr><td class="cl">time s</td><td>' + summary.conversionSeconds.toFixed(3) + '</td></tr>';
+      }
       const q = summary.imageQuality;
       if (q) {
         s += '<tr><td class="cl">SSIM</td><td>' + q.ssim.toFixed(3) + '</td></tr>';
@@ -771,7 +804,7 @@ async function generateComparisonHtml(scenarios) {
     }
 
     let html = '<div class="scenario">';
-    html += '<h2>' + row.mode + ' / ' + row.fixture + '</h2>';
+    html += '<h2>' + formatModeLabel(row.mode) + ' / ' + row.fixture + '</h2>';
     html += '<div class="images">';
     html += '<div class="img-box"><img src="' + fixtureSrc + '" style="object-fit:cover;" alt="Source"><div class="label">Source</div></div>';
     if (row.baseline) {
@@ -791,6 +824,7 @@ async function generateComparisonHtml(scenarios) {
       html += metricRow('chromaRMSE', lq.chromaRMSE, bq.chromaRMSE, 4, true);
       html += metricRow('meanDeltaE', lq.meanDeltaE, bq.meanDeltaE, 4, true);
       html += metricRow('p95DeltaE', lq.percentile95DeltaE, bq.percentile95DeltaE, 4, true);
+      html += metricRow('conversionMs', row.latest?.conversionMs, row.baseline?.conversionMs, 2, true);
       html += '</table></div>';
     }
 
@@ -843,6 +877,7 @@ async function generateComparisonHtml(scenarios) {
 
   await writeFile(reportPath, html, 'utf8');
   console.log('Visual comparison: ' + reportPath);
+  return reportPath;
 }
 
 async function compareAgainstBaselines() {
@@ -872,8 +907,13 @@ async function compareAgainstBaselines() {
           readFile(latestPreviewPath),
           readFile(baselinePreviewPath),
         ]);
+        const latestSummary = JSON.parse(latestSummaryBuf.toString('utf8'));
+        const baselineSummary = JSON.parse(baselineSummaryBuf.toString('utf8'));
+        const summaryMatches =
+          JSON.stringify(stripVolatileSummaryFields(latestSummary)) ===
+          JSON.stringify(stripVolatileSummaryFields(baselineSummary));
 
-        if (!latestSummaryBuf.equals(baselineSummaryBuf)) {
+        if (!summaryMatches) {
           failures.push(`${mode}/${fixtureName}: summary mismatch`);
         }
         if (!latestPreview.equals(baselinePreview)) {
@@ -882,8 +922,6 @@ async function compareAgainstBaselines() {
 
         // Show quality score changes regardless of pass/fail
         try {
-          const latestSummary = JSON.parse(latestSummaryBuf.toString('utf8'));
-          const baselineSummary = JSON.parse(baselineSummaryBuf.toString('utf8'));
           if (latestSummary.imageQuality && baselineSummary.imageQuality) {
             const lq = latestSummary.imageQuality;
             const bq = baselineSummary.imageQuality;
@@ -893,7 +931,8 @@ async function compareAgainstBaselines() {
             const lumaDelta = lq.lumaRMSE - bq.lumaRMSE;
             const deltaEDelta = lq.meanDeltaE - bq.meanDeltaE;
             const p95Delta = lq.percentile95DeltaE - bq.percentile95DeltaE;
-            const changed = !latestSummaryBuf.equals(baselineSummaryBuf);
+            const timeDelta = (latestSummary.conversionMs ?? 0) - (baselineSummary.conversionMs ?? 0);
+            const changed = !summaryMatches;
             const tag = changed ? 'CHANGED' : 'OK';
             console.log(
               `  ${mode}/${fixtureName} [${tag}]: ` +
@@ -902,7 +941,8 @@ async function compareAgainstBaselines() {
               `lumaRMSE (${formatDelta(lumaDelta, true)}) ` +
               `chromaRMSE (${formatDelta(chromaDelta, true)}) ` +
               `meanΔE (${formatDelta(deltaEDelta, true)}) ` +
-              `p95ΔE (${formatDelta(p95Delta, true)})`
+              `p95ΔE (${formatDelta(p95Delta, true)}) ` +
+              `timeMs (${formatDelta(timeDelta, true)})`
             );
           }
         } catch {

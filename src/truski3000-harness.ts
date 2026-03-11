@@ -45,6 +45,8 @@ type HarnessModeSummary = {
   mode: HarnessMode;
   charset: ConversionResult['charset'];
   backgroundColor: number;
+  conversionMs: number;
+  conversionSeconds: number;
   ecmBgColors: number[];
   qualityMeanDeltaE: number;
   qualityPerCellHash: string;
@@ -174,7 +176,8 @@ async function summarizeMode(
   mode: HarnessMode,
   result: ConversionResult,
   preview: ImageData,
-  sourceReference: ImageData
+  sourceReference: ImageData,
+  conversionMs: number
 ): Promise<{ summary: HarnessModeSummary; previewPngDataUrl: string }> {
   if (!result.qualityMetric || !result.cellMetadata) {
     throw new Error(`Missing Phase 4 diagnostics for ${mode}`);
@@ -186,6 +189,8 @@ async function summarizeMode(
       mode,
       charset: result.charset,
       backgroundColor: result.backgroundColor,
+      conversionMs: Number(conversionMs.toFixed(2)),
+      conversionSeconds: Number((conversionMs / 1000).toFixed(3)),
       ecmBgColors: [...result.ecmBgColors],
       qualityMeanDeltaE: result.qualityMetric.meanDeltaE,
       qualityPerCellHash: await hashText(JSON.stringify(result.qualityMetric.perCellDeltaE)),
@@ -546,7 +551,7 @@ async function runFixture(request: HarnessRunRequest): Promise<HarnessRunResult>
   for (const [mode, result, preview] of modeEntries) {
     if (!result || !preview || !sourceReference) continue;
     backendByMode[mode] = result.accelerationBackend;
-    const summarized = await summarizeMode(mode, result, preview, sourceReference);
+    const summarized = await summarizeMode(mode, result, preview, sourceReference, elapsedMs);
     summaries[mode] = summarized.summary;
     previews[mode] = summarized.previewPngDataUrl;
   }

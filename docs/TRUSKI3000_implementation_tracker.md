@@ -81,8 +81,8 @@ Last updated: 2026-03-10
 | Directional alignment bonus | **DONE** | imageConverterHeuristics.ts, imageConverterStandardCore.ts | `computeDirectionalAlignmentBonus()` — rewards glyphs matching cell gradient direction (`EDGE_ALIGNMENT_WEIGHT=14.0`) |
 | Blend match bonus | **DONE** | imageConverterStandardCore.ts | Standalone reward for fg/bg pairs whose perceptual blend matches source color (`BLEND_MATCH_WEIGHT=3.0`) |
 | Coverage extremity penalty (coarse) | **DONE** | imageConverterStandardCore.ts | Penalizes near-0% or near-100% coverage in coarse scorer. Scaled by luminance distance between cell avgL and background L (`COVERAGE_EXTREMITY_WEIGHT=20.0`). Protects dark images automatically |
-| Wildcard candidate admission | **DONE** | imageConverterStandardCore.ts | Low-contrast candidates enter pool when within score margin (`0.15`) or blend quality > `0.7`. Max 2 per cell |
-| Soft contrast penalty | **DONE** | imageConverterStandardCore.ts | Replaces hard `hasMinimumContrast` gate for Standard coarse scoring |
+| Wildcard candidate admission | **DONE** | imageConverterStandardCore.ts | Competitive low-contrast admission layered on top of the normal contrast-pruned pool. Up to 2 low-contrast candidates per cell/background enter only when within score margin (`0.15`) or blend quality > `0.7` |
+| Soft contrast penalty | **NOT SHIPPED** | — | Explored during tuning, but the final Standard path keeps the normal `hasMinimumContrast()` gate for baseline candidates and relies on wildcard admission for selective low-contrast diversity |
 | Saliency weight in scoring | **DONE** | imageConverter.ts | `weights[p] * perceptualError(...)` |
 | Luminance match penalty | **DONE** | imageConverter.ts | `lumMatchWeight * lumDiff²` |
 | Chroma preservation bonus | **PARTIAL** | imageConverterHeuristics.ts | `computeHuePreservationBonus()` implemented but **disabled** (`CHROMA_BONUS_WEIGHT=0`) |
@@ -113,9 +113,9 @@ Last updated: 2026-03-10
 | OkLab quality metrics suite | **DONE** | imageConverterQualityMetrics.ts | lumaRMSE, chromaRMSE, meanDeltaE, per-tile SSIM, cellSSIM, p95DeltaE, worst-tile tracking |
 | cellSSIM (cell-averaged SSIM) | **DONE** | imageConverterQualityMetrics.ts | Structural similarity at 40×25 cell grid (8×8 averaged) with 3×3 sliding window. Captures "looks right from viewing distance" |
 | Test harness | **DONE** | scripts/truski3000-harness/run.mjs | 5 commands: compare, record, benchmark, parity, validate. Visual comparison HTML, named snapshots, character utilization diagnostics, color pair gap analysis |
-| Correct C64 aspect ratio (4:3) | **MISSING** | — | Preview is raw 320×200, no PAR correction |
+| Correct C64 aspect ratio (4:3) | **DONE** | ImageConverterModal.module.css | Preview is displayed at a 4:3 presentation aspect in the converter UI |
 | Global mode auto-selection + ranking | **MISSING** | — | Modes solved independently, no auto-select or comparison output |
-| Per-cell metadata export | **MISSING** | — | No exported per-cell colors/error/detail diagnostics |
+| Per-cell metadata export | **DONE** | imageConverter.ts | `ConversionResult.cellMetadata` exports fg/bg, errorScore, detailScore, saliencyWeight, screencode, and MCM hires-vs-multicolor flagging |
 
 ---
 
@@ -155,21 +155,35 @@ All constants in `imageConverterStandardCore.ts`:
 
 ## Remaining Work
 
-### Phase 6 — Global Mode Selection (not started)
-1. **Global legal mode auto-selection** — Score Standard/ECM/MCM, choose best full-screen mode
-2. **Per-mode ranking + comparison output** — Expose total error per mode for UI
-3. **Advanced saliency** — Edge energy + center bias (beyond deviation-from-mean)
+### Next: ECM Quality Tuning (port Standard innovations)
+1. **Port blend bonus + CSF/blend interaction** — Add `BLEND_MATCH_WEIGHT` and `BLEND_CSF_RELIEF` to shared binary scoring pipeline (`buildBinaryCellScoringTables` in `imageConverter.ts`). Highest-impact single change — Standard's biggest quality gain came from this.
+2. **Coverage extremity × lumDistance for register selection** — Apply coverage penalty at the ECM register-set ranking level: penalize background combos that leave large luminance gaps, forcing cells into near-solid blocks. 4/16 colors is still only 25% of the palette — the bottleneck is softer than Standard but real.
+3. **Bump CHROMA_ERROR_WEIGHT to 2.0** — Standard gets better color fidelity at 2.0 vs ECM's current 1.0.
+4. **Port wildcard admission** — Replace blunt "disable all contrast filtering" with competitive wildcard system (score margin + blend quality threshold). More selective than flooding pools.
+5. **Add ECM fixtures to harness manifest** — Need ECM-mode test scenarios for systematic comparison and tuning.
+
+### Next: MCM Quality Tuning (port Standard innovations + MCM-specific)
+
+**Shared with ECM** (same changes benefit both — items 1, 3 above apply to MCM's hires-within-MCM candidates too):
+6. **Blend bonus + CSF/blend in shared binary pipeline** — Same port as ECM item 1. MCM's hires candidates use `buildBinarySummaryScoringTables` which lacks blend quality. Critical for hires-within-MCM cells where dithering characters should beat multicolor on smooth gradients.
+7. **CHROMA_ERROR_WEIGHT ≥ 2.0** — Arguably even higher for MCM than Standard/ECM. At 4×8 fat-pixel resolution, color fidelity matters MORE than fine spatial detail. The halved horizontal resolution makes chroma the dominant perceptual signal.
+
+**MCM-specific**:
+8. **MCM triple refinement pass** — Currently the 3 shared colors (bg, mc1, mc2) are locked after coarse ranking with no refinement. ECM has `runEcmRegisterResolvePass` (k-means + re-solve, up to 4 iterations). Port an equivalent for MCM: after initial solve, k-means on (mc1, mc2) weighted by per-cell residual error, re-quantize to nearest palette colors, re-solve affected cells.
+9. **Luminance-spread penalty for triple selection** — In the coarse ranking of 3360 triples, penalize triples whose 3 shared colors are clustered in luminance. Prefer triples that cover the image's brightness range so all cells have a nearby shared color. Conceptually similar to coverage extremity × lumDistance applied at the triple level.
+10. **Wildcard admission for hires candidates** — MCM's hires path uses hard `hasMinimumContrast` gate. Port competitive wildcard system for the hires candidates within MCM.
+11. **Add MCM fixtures to harness manifest** — Need MCM-mode test scenarios for systematic comparison and tuning.
+
+### Phase 6 — Global Mode Selection
+12. **Global legal mode auto-selection** — Score Standard/ECM/MCM, choose best full-screen mode
+13. **Per-mode ranking + comparison output** — Expose total error per mode for UI
+14. **Advanced saliency** — Edge energy + center bias (beyond deviation-from-mean)
 
 ### Performance (Phase 5, low priority)
-4. **WASM kernel performance** — Current WASM is slower than JS; needs profiling and optimization
-5. **Distance LUT in WASM memory** — Move pairDiff to WASM linear memory for SIMD access
+15. **WASM kernel performance** — Current WASM is slower than JS; needs profiling and optimization
+16. **Distance LUT in WASM memory** — Move pairDiff to WASM linear memory for SIMD access
 
 ### Quality polish (ongoing)
-6. **Chroma preservation bonus** — Implemented but disabled (weight=0); needs tuning
-7. **Edge mismatch weighting** — Implemented but disabled (weight=0.0); needs color-selection fixes
-8. **ECM register re-solve** — k-means on actual assignments for better ECM quality
-9. **Saliency weighting in palette solve** — Use saliency during register selection, not just matching
-
-### Output polish
-10. **Aspect-ratio-correct preview** — 4:3 display aspect
-11. **Per-cell metadata export** — Colors, error scores, detail diagnostics per cell
+17. **Chroma preservation bonus** — Implemented but disabled (weight=0); needs tuning
+18. **Edge mismatch weighting** — Implemented but disabled (weight=0.0); needs color-selection fixes
+19. **Saliency weighting in palette solve** — Use saliency during register selection, not just matching
