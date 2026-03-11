@@ -5,12 +5,17 @@ type BinaryKernelContext = {
   positionOffsets: Int32Array;
   packedBinaryGlyphLo: Uint32Array;
   packedBinaryGlyphHi: Uint32Array;
+  refSetCount: Int32Array;
+  glyphAtlas: {
+    spatialFrequency: Float32Array;
+  };
 };
 
 type McmKernelContext = BinaryKernelContext & {
   flatMcmPositions?: Uint8Array[];
   mcmPositionOffsets?: Int32Array[];
   packedMcmGlyphMasks?: [Uint32Array, Uint32Array, Uint32Array, Uint32Array];
+  refMcmBpCount?: Int32Array[];
 };
 
 type McmKernelExports = {
@@ -38,9 +43,33 @@ type McmKernelExports = {
   getOutputSetErrsPtr(): number;
   getOutputBitPairErrsPtr(): number;
   getOutputHammingPtr(): number;
+  getRankSampleCellIndicesPtr(): number;
+  getRankSampleAvgLPtr(): number;
+  getRankSampleDetailScoresPtr(): number;
+  getRankSampleSaliencyWeightsPtr(): number;
+  getRankSampleTotalErrByColorPtr(): number;
+  getRankCandidateScreencodesPtr(): number;
+  getRankRefSetCountPtr(): number;
+  getRankGlyphSpatialFrequencyPtr(): number;
+  getRankRefMcmBpCountsPtr(): number;
+  getRankBinaryMixLPtr(): number;
+  getRankPaletteLPtr(): number;
+  getRankContrastMaskPtr(): number;
+  getRankTopBgsPtr(): number;
+  getRankTopMc1sPtr(): number;
+  getRankTopMc2sPtr(): number;
+  getRankTopScoresPtr(): number;
   computeMatrices(): void;
   computeModeMatrices(cellIndex: number): void;
   computeHammingDistances(): void;
+  rankModeTriples(
+    sampleCount: number,
+    candidateCount: number,
+    finalistCount: number,
+    lumMatchWeight: number,
+    csfWeight: number,
+    manualBgColor: number
+  ): number;
 };
 
 type McmKernelImports = WebAssembly.Imports & {
@@ -105,6 +134,22 @@ export class McmWasmKernel {
   private modeWeightedPairErrorsView: Float32Array;
   private pairDiffView: Float32Array;
   private thresholdMasksView: Uint32Array;
+  private rankSampleCellIndicesView: Int32Array;
+  private rankSampleAvgLView: Float64Array;
+  private rankSampleDetailScoresView: Float64Array;
+  private rankSampleSaliencyWeightsView: Float64Array;
+  private rankSampleTotalErrByColorView: Float32Array;
+  private rankCandidateScreencodesView: Uint16Array;
+  private rankRefSetCountView: Int32Array;
+  private rankGlyphSpatialFrequencyView: Float32Array;
+  private rankRefMcmBpCountsView: Uint8Array;
+  private rankBinaryMixLView: Float64Array;
+  private rankPaletteLView: Float64Array;
+  private rankContrastMaskView: Uint8Array;
+  private rankTopBgsView: Uint8Array;
+  private rankTopMc1sView: Uint8Array;
+  private rankTopMc2sView: Uint8Array;
+  private rankTopScoresView: Float64Array;
   private positionOffsetsView: Int32Array;
   private flatPositionsView: Uint8Array;
   private mcmPositionOffsetsViews: Int32Array[];
@@ -113,6 +158,12 @@ export class McmWasmKernel {
   private outputSetErrsView: Float32Array;
   private outputBitPairErrsView: Float32Array;
   private outputHammingView: Uint8Array;
+  private loadedRankingMetrics: {
+    binaryMixL: Float64Array;
+    pL: Float64Array;
+    pairDiff: Float64Array;
+    maxPairDiff: number;
+  } | null = null;
 
   private constructor(exports: McmKernelExports) {
     this.exports = exports;
@@ -122,6 +173,22 @@ export class McmWasmKernel {
     this.modeWeightedPairErrorsView = new Float32Array(exports.memory.buffer, exports.getModeWeightedPairErrorsPtr(), 40 * 25 * 32 * 16);
     this.pairDiffView = new Float32Array(exports.memory.buffer, exports.getPairDiffPtr(), 16 * 16);
     this.thresholdMasksView = new Uint32Array(exports.memory.buffer, exports.getThresholdMasksPtr(), 4);
+    this.rankSampleCellIndicesView = new Int32Array(exports.memory.buffer, exports.getRankSampleCellIndicesPtr(), 64);
+    this.rankSampleAvgLView = new Float64Array(exports.memory.buffer, exports.getRankSampleAvgLPtr(), 64);
+    this.rankSampleDetailScoresView = new Float64Array(exports.memory.buffer, exports.getRankSampleDetailScoresPtr(), 64);
+    this.rankSampleSaliencyWeightsView = new Float64Array(exports.memory.buffer, exports.getRankSampleSaliencyWeightsPtr(), 64);
+    this.rankSampleTotalErrByColorView = new Float32Array(exports.memory.buffer, exports.getRankSampleTotalErrByColorPtr(), 64 * 16);
+    this.rankCandidateScreencodesView = new Uint16Array(exports.memory.buffer, exports.getRankCandidateScreencodesPtr(), 256);
+    this.rankRefSetCountView = new Int32Array(exports.memory.buffer, exports.getRankRefSetCountPtr(), 256);
+    this.rankGlyphSpatialFrequencyView = new Float32Array(exports.memory.buffer, exports.getRankGlyphSpatialFrequencyPtr(), 256);
+    this.rankRefMcmBpCountsView = new Uint8Array(exports.memory.buffer, exports.getRankRefMcmBpCountsPtr(), 256 * 4);
+    this.rankBinaryMixLView = new Float64Array(exports.memory.buffer, exports.getRankBinaryMixLPtr(), 65 * 16 * 16);
+    this.rankPaletteLView = new Float64Array(exports.memory.buffer, exports.getRankPaletteLPtr(), 16);
+    this.rankContrastMaskView = new Uint8Array(exports.memory.buffer, exports.getRankContrastMaskPtr(), 16 * 8);
+    this.rankTopBgsView = new Uint8Array(exports.memory.buffer, exports.getRankTopBgsPtr(), 16);
+    this.rankTopMc1sView = new Uint8Array(exports.memory.buffer, exports.getRankTopMc1sPtr(), 16);
+    this.rankTopMc2sView = new Uint8Array(exports.memory.buffer, exports.getRankTopMc2sPtr(), 16);
+    this.rankTopScoresView = new Float64Array(exports.memory.buffer, exports.getRankTopScoresPtr(), 16);
     this.positionOffsetsView = new Int32Array(exports.memory.buffer, exports.getPositionOffsetsPtr(), 257);
     this.flatPositionsView = new Uint8Array(exports.memory.buffer, exports.getFlatPositionsPtr(), 256 * 64);
     this.mcmPositionOffsetsViews = [
@@ -208,20 +275,92 @@ export class McmWasmKernel {
     return this.outputHammingView;
   }
 
+  rankModeTriples(
+    cells: ArrayLike<{
+      totalErrByColor: Float32Array;
+      avgL: number;
+      detailScore: number;
+      saliencyWeight: number;
+    }>,
+    sampleIndices: ArrayLike<number>,
+    candidateScreencodes: Uint16Array,
+    manualBgColor: number | null,
+    finalistCount: number,
+    metrics: {
+      pairDiff: Float64Array;
+      binaryMixL: Float64Array;
+      pL: Float64Array;
+      maxPairDiff: number;
+    },
+    context: McmKernelContext,
+    settings: {
+      lumMatchWeight: number;
+      csfWeight: number;
+    }
+  ): Array<{ triple: [number, number, number]; score: number }> {
+    this.ensureContext(context);
+    this.ensurePairDiff(metrics.pairDiff);
+    this.ensureRankingMetrics(metrics);
+    this.rankCandidateScreencodesView.set(candidateScreencodes);
+
+    const sampleCount = Math.min(sampleIndices.length, 64);
+    for (let sample = 0; sample < sampleCount; sample++) {
+      const cellIndex = sampleIndices[sample] ?? 0;
+      const cell = cells[cellIndex];
+      this.rankSampleCellIndicesView[sample] = cellIndex;
+      this.rankSampleAvgLView[sample] = cell.avgL;
+      this.rankSampleDetailScoresView[sample] = cell.detailScore;
+      this.rankSampleSaliencyWeightsView[sample] = cell.saliencyWeight;
+      this.rankSampleTotalErrByColorView.set(cell.totalErrByColor, sample * 16);
+    }
+
+    const rankedCount = this.exports.rankModeTriples(
+      sampleCount,
+      candidateScreencodes.length,
+      Math.min(finalistCount, 16),
+      settings.lumMatchWeight,
+      settings.csfWeight,
+      manualBgColor ?? -1
+    );
+
+    const ranked: Array<{ triple: [number, number, number]; score: number }> = [];
+    for (let index = 0; index < rankedCount; index++) {
+      ranked.push({
+        triple: [
+          this.rankTopBgsView[index] ?? 0,
+          this.rankTopMc1sView[index] ?? 0,
+          this.rankTopMc2sView[index] ?? 0,
+        ],
+        score: this.rankTopScoresView[index] ?? Infinity,
+      });
+    }
+    return ranked;
+  }
+
   private ensureContext(context: McmKernelContext) {
     if (this.loadedContext === context) {
       return;
     }
-    if (!context.flatMcmPositions || !context.mcmPositionOffsets || !context.packedMcmGlyphMasks) {
+    if (
+      !context.flatMcmPositions ||
+      !context.mcmPositionOffsets ||
+      !context.packedMcmGlyphMasks ||
+      !context.refMcmBpCount
+    ) {
       throw new Error('Missing MCM position data for WASM kernel.');
     }
 
     this.positionOffsetsView.set(context.positionOffsets);
     this.flatPositionsView.set(context.flatPositions);
+    this.rankRefSetCountView.set(context.refSetCount);
+    this.rankGlyphSpatialFrequencyView.set(context.glyphAtlas.spatialFrequency);
     for (let bitPair = 0; bitPair < 4; bitPair++) {
       this.mcmPositionOffsetsViews[bitPair].set(context.mcmPositionOffsets[bitPair]);
       this.flatMcmPositionsViews[bitPair].set(context.flatMcmPositions[bitPair]);
       this.packedMcmGlyphMaskViews[bitPair].set(context.packedMcmGlyphMasks[bitPair]);
+      for (let ch = 0; ch < 256; ch++) {
+        this.rankRefMcmBpCountsView[ch * 4 + bitPair] = context.refMcmBpCount[ch][bitPair] ?? 0;
+      }
     }
     this.loadedContext = context;
   }
@@ -233,5 +372,31 @@ export class McmWasmKernel {
 
     this.pairDiffView.set(pairDiff);
     this.loadedPairDiff = pairDiff;
+  }
+
+  private ensureRankingMetrics(metrics: {
+    binaryMixL: Float64Array;
+    pL: Float64Array;
+    pairDiff: Float64Array;
+    maxPairDiff: number;
+  }) {
+    if (
+      this.loadedRankingMetrics?.binaryMixL === metrics.binaryMixL &&
+      this.loadedRankingMetrics?.pL === metrics.pL &&
+      this.loadedRankingMetrics?.pairDiff === metrics.pairDiff &&
+      this.loadedRankingMetrics?.maxPairDiff === metrics.maxPairDiff
+    ) {
+      return;
+    }
+
+    this.rankBinaryMixLView.set(metrics.binaryMixL);
+    this.rankPaletteLView.set(metrics.pL);
+    for (let bg = 0; bg < 16; bg++) {
+      for (let fg = 0; fg < 8; fg++) {
+        this.rankContrastMaskView[bg * 8 + fg] =
+          fg !== bg && metrics.pairDiff[fg * 16 + bg] >= metrics.maxPairDiff * 0.16 ? 1 : 0;
+      }
+    }
+    this.loadedRankingMetrics = metrics;
   }
 }

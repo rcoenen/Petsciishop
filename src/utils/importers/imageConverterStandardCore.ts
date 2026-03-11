@@ -883,6 +883,7 @@ const _foregroundCandidateCache = new WeakMap<PaletteMetricData, Map<number, Uin
 const _reusableSolveCounts = new Uint8Array(CELL_COUNT);
 const _reusableSolveChars = new Uint8Array(CELL_COUNT * 16);
 const _reusableSolveFgs = new Uint8Array(CELL_COUNT * 16);
+const _reusableSolveVariants = new Uint8Array(CELL_COUNT * 16);
 const _reusableSelectedIndicesU8 = new Uint8Array(CELL_COUNT);
 const _reusableSolveBaseErrors = new Float64Array(CELL_COUNT * 16);
 const _reusableSolveBrightnessResiduals = new Float64Array(CELL_COUNT * 16);
@@ -1616,6 +1617,7 @@ function trySolveSelectionWithKernel(
       const edgeBase = flatIndex * 8;
       _reusableSolveChars[flatIndex] = candidate.char;
       _reusableSolveFgs[flatIndex] = candidate.fg;
+      _reusableSolveVariants[flatIndex] = 0;
       _reusableSolveBaseErrors[flatIndex] = candidate.baseError;
       _reusableSolveBrightnessResiduals[flatIndex] = candidate.brightnessResidual;
       _reusableSolveRepeatH[flatIndex] = candidate.repeatH;
@@ -1633,6 +1635,7 @@ function trySolveSelectionWithKernel(
     _reusableSolveCounts,
     _reusableSolveChars,
     _reusableSolveFgs,
+    _reusableSolveVariants,
     _reusableSolveBaseErrors,
     _reusableSolveBrightnessResiduals,
     _reusableSolveRepeatH,
@@ -1643,6 +1646,8 @@ function trySolveSelectionWithKernel(
     _reusableSolveEdgeBottom,
     analysis.hBoundaryDiffs,
     analysis.vBoundaryDiffs,
+    analysis.hBoundaryMeans,
+    analysis.vBoundaryMeans,
     SCREEN_SOLVE_PASSES
   );
   const refinedSelectedIndices = scoringKernel.refineSelectionWithPostPasses

@@ -39,6 +39,8 @@ const STANDARD_SOLVE_CANDIDATE_COUNT: i32 = CELL_COUNT * MAX_STANDARD_POOL_SIZE;
 const STANDARD_SOLVE_EDGE_VALUE_COUNT: i32 = STANDARD_SOLVE_CANDIDATE_COUNT * 8;
 const H_BOUNDARY_DIFF_COUNT: i32 = GRID_HEIGHT * (GRID_WIDTH - 1) * 8;
 const V_BOUNDARY_DIFF_COUNT: i32 = (GRID_HEIGHT - 1) * GRID_WIDTH * 8;
+const H_BOUNDARY_MEAN_COUNT: i32 = GRID_HEIGHT * (GRID_WIDTH - 1);
+const V_BOUNDARY_MEAN_COUNT: i32 = (GRID_HEIGHT - 1) * GRID_WIDTH;
 const MIN_PAIR_DIFF_RATIO: f64 = 0.16;
 const BLEND_CSF_RELIEF: f64 = 1.5;
 const BLEND_QUALITY_SHARPNESS: f64 = 48.0;
@@ -46,6 +48,8 @@ const BLEND_MATCH_WEIGHT: f64 = 3.0;
 const COVERAGE_EXTREMITY_WEIGHT: f64 = 20.0;
 const CONTINUITY_PENALTY: f64 = 0.14;
 const REPEAT_PENALTY: f64 = 28.0;
+const MODE_SWITCH_PENALTY: f64 = 10.0;
+const MODE_SWITCH_DIFF_THRESHOLD: f64 = 3.5;
 const WILDCARD_SCORE_MARGIN: f64 = 0.15;
 const WILDCARD_BLEND_QUALITY_MIN: f64 = 0.7;
 const WILDCARD_MAX_ADMITTED: i32 = 2;
@@ -109,6 +113,7 @@ const standardThresholdHiScratch = new Uint32Array(PAIR_DIFF_COUNT);
 const standardSolveCounts = new Uint8Array(CELL_COUNT);
 const standardSolveChars = new Uint8Array(STANDARD_SOLVE_CANDIDATE_COUNT);
 const standardSolveFgs = new Uint8Array(STANDARD_SOLVE_CANDIDATE_COUNT);
+const standardSolveVariants = new Uint8Array(STANDARD_SOLVE_CANDIDATE_COUNT);
 const standardSolveBaseErrors = new Float64Array(STANDARD_SOLVE_CANDIDATE_COUNT);
 const standardSolveBrightnessResiduals = new Float64Array(STANDARD_SOLVE_CANDIDATE_COUNT);
 const standardSolveRepeatH = new Float64Array(STANDARD_SOLVE_CANDIDATE_COUNT);
@@ -121,6 +126,8 @@ const standardSolveEdgeTop = new Uint8Array(STANDARD_SOLVE_EDGE_VALUE_COUNT);
 const standardSolveEdgeBottom = new Uint8Array(STANDARD_SOLVE_EDGE_VALUE_COUNT);
 const standardSolveHBoundaryDiffs = new Float32Array(H_BOUNDARY_DIFF_COUNT);
 const standardSolveVBoundaryDiffs = new Float32Array(V_BOUNDARY_DIFF_COUNT);
+const standardSolveHBoundaryMeans = new Float32Array(H_BOUNDARY_MEAN_COUNT);
+const standardSolveVBoundaryMeans = new Float32Array(V_BOUNDARY_MEAN_COUNT);
 const standardCellDetailScores = new Float32Array(CELL_COUNT);
 const standardCellGradientDirections = new Uint8Array(CELL_COUNT);
 const standardSolveSelectedIndices = new Uint8Array(CELL_COUNT);
@@ -270,6 +277,10 @@ export function getStandardSolveFgsPtr(): usize {
   return standardSolveFgs.dataStart;
 }
 
+export function getStandardSolveVariantsPtr(): usize {
+  return standardSolveVariants.dataStart;
+}
+
 export function getStandardSolveBaseErrorsPtr(): usize {
   return standardSolveBaseErrors.dataStart;
 }
@@ -316,6 +327,14 @@ export function getStandardSolveHBoundaryDiffsPtr(): usize {
 
 export function getStandardSolveVBoundaryDiffsPtr(): usize {
   return standardSolveVBoundaryDiffs.dataStart;
+}
+
+export function getStandardSolveHBoundaryMeansPtr(): usize {
+  return standardSolveHBoundaryMeans.dataStart;
+}
+
+export function getStandardSolveVBoundaryMeansPtr(): usize {
+  return standardSolveVBoundaryMeans.dataStart;
 }
 
 export function getStandardCellDetailScoresPtr(): usize {
@@ -636,8 +655,16 @@ function hBoundaryOffset(cy: i32, cx: i32): i32 {
   return (cy * (GRID_WIDTH - 1) + cx) * 8;
 }
 
+function hBoundaryMeanOffset(cy: i32, cx: i32): i32 {
+  return cy * (GRID_WIDTH - 1) + cx;
+}
+
 function vBoundaryOffset(cy: i32, cx: i32): i32 {
   return (cy * GRID_WIDTH + cx) * 8;
+}
+
+function vBoundaryMeanOffset(cy: i32, cx: i32): i32 {
+  return cy * GRID_WIDTH + cx;
 }
 
 function computeStandardNeighborPenalty(
@@ -651,6 +678,9 @@ function computeStandardNeighborPenalty(
   const firstEdgeOffset = standardSolveEdgeOffset(firstFlatIndex);
   const secondEdgeOffset = standardSolveEdgeOffset(secondFlatIndex);
   const boundaryBase = horizontal ? hBoundaryOffset(boundaryCy, boundaryCx) : vBoundaryOffset(boundaryCy, boundaryCx);
+  const boundaryMean = horizontal
+    ? <f64>standardSolveHBoundaryMeans[hBoundaryMeanOffset(boundaryCy, boundaryCx)]
+    : <f64>standardSolveVBoundaryMeans[vBoundaryMeanOffset(boundaryCy, boundaryCx)];
 
   for (let i: i32 = 0; i < 8; i++) {
     const firstColor = horizontal
@@ -668,14 +698,21 @@ function computeStandardNeighborPenalty(
   }
 
   let repeatPenalty = 0.0;
-  if (standardSolveChars[firstFlatIndex] == standardSolveChars[secondFlatIndex]) {
+  const sameVariant = standardSolveVariants[firstFlatIndex] == standardSolveVariants[secondFlatIndex];
+  if (sameVariant && standardSolveChars[firstFlatIndex] == standardSolveChars[secondFlatIndex]) {
     const scale = horizontal
       ? (standardSolveRepeatH[firstFlatIndex] + standardSolveRepeatH[secondFlatIndex]) * 0.5
       : (standardSolveRepeatV[firstFlatIndex] + standardSolveRepeatV[secondFlatIndex]) * 0.5;
     repeatPenalty = REPEAT_PENALTY * scale;
   }
 
-  return CONTINUITY_PENALTY * (edgePenalty / 8.0) + repeatPenalty;
+  let modePenalty = 0.0;
+  if (!sameVariant) {
+    const smoothness = Math.max(0.0, 1.0 - boundaryMean / MODE_SWITCH_DIFF_THRESHOLD);
+    modePenalty = MODE_SWITCH_PENALTY * smoothness;
+  }
+
+  return CONTINUITY_PENALTY * (edgePenalty / 8.0) + repeatPenalty + modePenalty;
 }
 
 function computeStandardCandidateCost(cellIndex: i32, candidateIndex: i32): f64 {
@@ -1125,7 +1162,7 @@ function computeCandidatePoolsForBase(
 }
 
 export function computeStandardSolveSelection(passCount: i32): void {
-  const verticalDebt = new Float64Array(GRID_WIDTH);
+  const verticalDebt = new Float32Array(GRID_WIDTH);
 
   for (let cy: i32 = 0; cy < GRID_HEIGHT; cy++) {
     let horizontalDebt = 0.0;
@@ -1148,7 +1185,9 @@ export function computeStandardSolveSelection(passCount: i32): void {
       standardSolveSelectedIndices[cellIndex] = <u8>bestIndex;
       const chosenFlatIndex = standardSolveFlatIndex(cellIndex, bestIndex);
       horizontalDebt = clampBrightnessDebt((horizontalDebt + standardSolveBrightnessResiduals[chosenFlatIndex]) * BRIGHTNESS_DEBT_DECAY);
-      verticalDebt[cx] = clampBrightnessDebt((verticalDebt[cx] + standardSolveBrightnessResiduals[chosenFlatIndex]) * BRIGHTNESS_DEBT_DECAY);
+      verticalDebt[cx] = <f32>clampBrightnessDebt(
+        (verticalDebt[cx] + standardSolveBrightnessResiduals[chosenFlatIndex]) * BRIGHTNESS_DEBT_DECAY
+      );
     }
   }
 
@@ -1157,6 +1196,7 @@ export function computeStandardSolveSelection(passCount: i32): void {
     let start = forward ? 0 : CELL_COUNT - 1;
     let end = forward ? CELL_COUNT : -1;
     let step = forward ? 1 : -1;
+    let changed = false;
 
     for (let cellIndex = start; cellIndex != end; cellIndex += step) {
       const count = <i32>standardSolveCounts[cellIndex];
@@ -1171,7 +1211,14 @@ export function computeStandardSolveSelection(passCount: i32): void {
         }
       }
 
-      standardSolveSelectedIndices[cellIndex] = <u8>bestIndex;
+      if (bestIndex != <i32>standardSolveSelectedIndices[cellIndex]) {
+        standardSolveSelectedIndices[cellIndex] = <u8>bestIndex;
+        changed = true;
+      }
+    }
+
+    if (!changed) {
+      break;
     }
   }
 }

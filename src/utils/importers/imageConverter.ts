@@ -91,6 +91,7 @@ const _ecmSolveCounts = new Uint8Array(CELL_COUNT);
 const _ecmSolveChars = new Uint8Array(CELL_COUNT * 16);
 const _ecmSolveFgs = new Uint8Array(CELL_COUNT * 16);
 const _ecmSolveBgs = new Uint8Array(CELL_COUNT * 16);
+const _ecmSolveVariants = new Uint8Array(CELL_COUNT * 16);
 const _ecmSolveBaseErrors = new Float64Array(CELL_COUNT * 16);
 const _ecmSolveBrightnessResiduals = new Float64Array(CELL_COUNT * 16);
 const _ecmSolveRepeatH = new Float64Array(CELL_COUNT * 16);
@@ -1700,6 +1701,19 @@ export interface McmCandidateScoringKernel {
     pairDiff: Float64Array,
     context: Pick<CharsetConversionContext, 'packedMcmGlyphMasks'>
   ): Uint8Array;
+  rankModeTriples?(
+    cells: ArrayLike<Pick<SourceCellData, 'totalErrByColor' | 'avgL' | 'detailScore' | 'saliencyWeight'>>,
+    sampleIndices: ArrayLike<number>,
+    candidateScreencodes: Uint16Array,
+    manualBgColor: number | null,
+    finalistCount: number,
+    metrics: Pick<PaletteMetricData, 'pairDiff' | 'binaryMixL' | 'pL' | 'maxPairDiff'>,
+    context: Pick<CharsetConversionContext, 'flatPositions' | 'positionOffsets' | 'flatMcmPositions' | 'mcmPositionOffsets' | 'refSetCount' | 'refMcmBpCount' | 'glyphAtlas'>,
+    settings: {
+      lumMatchWeight: number;
+      csfWeight: number;
+    }
+  ): Array<{ triple: [number, number, number]; score: number }>;
 }
 
 const ENABLE_WASM_DIAGNOSTICS = import.meta.env.DEV;
@@ -1707,6 +1721,7 @@ let binaryPrecisionChecksRemaining = 12;
 let mcmPrecisionChecksRemaining = 12;
 let binaryHammingChecksRemaining = 8;
 let mcmHammingChecksRemaining = 8;
+let mcmSolveScreenChecksRemaining = 1;
 const modeParityChecksRemaining: Record<'ecm' | 'mcm', number> = { ecm: 1, mcm: 1 };
 
 function computeBinarySetErrMatrixJs(
@@ -1804,6 +1819,149 @@ function compareModeConversions(
     bgIndicesMatch: arraysEqual(reference.bgIndices, candidate.bgIndices),
     mcmSharedColorsMatch: arraysEqual(reference.mcmSharedColors, candidate.mcmSharedColors),
   });
+}
+
+function firstArrayDiffIndex(a: ArrayLike<number>, b: ArrayLike<number>): number {
+  const limit = Math.min(a.length, b.length);
+  for (let i = 0; i < limit; i++) {
+    if (a[i] !== b[i]) return i;
+  }
+  return a.length === b.length ? -1 : limit;
+}
+
+function compareSolvedScreenResults(
+  label: string,
+  reference: PetsciiResult & { selected: ScreenCandidate[] },
+  candidate: PetsciiResult & { selected: ScreenCandidate[] }
+) {
+  let firstSelectedDiffIndex = -1;
+  const selectedLimit = Math.min(reference.selected.length, candidate.selected.length);
+  for (let i = 0; i < selectedLimit; i++) {
+    const ref = reference.selected[i];
+    const cand = candidate.selected[i];
+    if (ref.char !== cand.char || ref.fg !== cand.fg || ref.bg !== cand.bg) {
+      firstSelectedDiffIndex = i;
+      break;
+    }
+  }
+
+  console.info(`[TruSkii3000] ${label} ${JSON.stringify({
+    equal:
+      Math.abs(reference.totalError - candidate.totalError) <= 1e-6 &&
+      arraysEqual(reference.screencodes, candidate.screencodes) &&
+      arraysEqual(reference.colors, candidate.colors) &&
+      arraysEqual(reference.bgIndices, candidate.bgIndices),
+    selectedMatch: firstSelectedDiffIndex === -1 && reference.selected.length === candidate.selected.length,
+    screencodesMatch: arraysEqual(reference.screencodes, candidate.screencodes),
+    colorsMatch: arraysEqual(reference.colors, candidate.colors),
+    bgIndicesMatch: arraysEqual(reference.bgIndices, candidate.bgIndices),
+    totalErrorRef: reference.totalError,
+    totalErrorCandidate: candidate.totalError,
+    firstSelectedDiffIndex,
+    firstScreencodeDiffIndex: firstArrayDiffIndex(reference.screencodes, candidate.screencodes),
+    firstColorDiffIndex: firstArrayDiffIndex(reference.colors, candidate.colors),
+    referenceSelected: firstSelectedDiffIndex >= 0 ? reference.selected[firstSelectedDiffIndex] : undefined,
+    candidateSelected: firstSelectedDiffIndex >= 0 ? candidate.selected[firstSelectedDiffIndex] : undefined,
+  })}`);
+}
+
+function compareSelectedCandidates(
+  label: string,
+  reference: ScreenCandidate[],
+  candidate: ScreenCandidate[]
+): number {
+  let firstDiffIndex = -1;
+  const limit = Math.min(reference.length, candidate.length);
+  for (let i = 0; i < limit; i++) {
+    const ref = reference[i];
+    const cand = candidate[i];
+    if (
+      ref.char !== cand.char ||
+      ref.fg !== cand.fg ||
+      ref.bg !== cand.bg ||
+      ref.variant !== cand.variant
+    ) {
+      firstDiffIndex = i;
+      break;
+    }
+  }
+
+  console.info(`[TruSkii3000] ${label} ${JSON.stringify({
+    equal: firstDiffIndex === -1 && reference.length === candidate.length,
+    firstDiffIndex,
+    referenceSelected: firstDiffIndex >= 0 ? reference[firstDiffIndex] : undefined,
+    candidateSelected: firstDiffIndex >= 0 ? candidate[firstDiffIndex] : undefined,
+  })}`);
+  return firstDiffIndex;
+}
+
+function logSeedDecisionDiagnostics(
+  cellIndex: number,
+  candidatePools: ScreenCandidate[][]
+) {
+  const verticalDebt = new Float32Array(GRID_WIDTH);
+  let targetHorizontalDebt = 0;
+  let targetVerticalDebt = 0;
+
+  outer: for (let cy = 0; cy < GRID_HEIGHT; cy++) {
+    let horizontalDebt = 0;
+    for (let cx = 0; cx < GRID_WIDTH; cx++) {
+      const currentCellIndex = cy * GRID_WIDTH + cx;
+      if (currentCellIndex === cellIndex) {
+        targetHorizontalDebt = horizontalDebt;
+        targetVerticalDebt = verticalDebt[cx];
+        break outer;
+      }
+
+      const pool = candidatePools[currentCellIndex];
+      let bestIdx = 0;
+      let bestCost = Infinity;
+      for (let candidateIndex = 0; candidateIndex < pool.length; candidateIndex++) {
+        const candidate = pool[candidateIndex];
+        const debtAfter = clampBrightnessDebt(horizontalDebt + verticalDebt[cx] + candidate.brightnessResidual);
+        const cost = candidate.baseError + BRIGHTNESS_DEBT_WEIGHT * debtAfter * debtAfter;
+        if (cost < bestCost) {
+          bestCost = cost;
+          bestIdx = candidateIndex;
+        }
+      }
+
+      const chosen = pool[bestIdx];
+      horizontalDebt = clampBrightnessDebt((horizontalDebt + chosen.brightnessResidual) * BRIGHTNESS_DEBT_DECAY);
+      verticalDebt[cx] = clampBrightnessDebt((verticalDebt[cx] + chosen.brightnessResidual) * BRIGHTNESS_DEBT_DECAY);
+    }
+  }
+
+  const pool = candidatePools[cellIndex] ?? [];
+  const cx = cellIndex % GRID_WIDTH;
+  const candidateCosts = pool.map((candidate, candidateIndex) => {
+    const debtAfter = clampBrightnessDebt(targetHorizontalDebt + targetVerticalDebt + candidate.brightnessResidual);
+    const flatIndex = cellIndex * 16 + candidateIndex;
+    return {
+      candidateIndex,
+      char: candidate.char,
+      fg: candidate.fg,
+      variant: candidate.variant,
+      baseError: candidate.baseError,
+      brightnessResidual: candidate.brightnessResidual,
+      debtAfter,
+      cost: candidate.baseError + BRIGHTNESS_DEBT_WEIGHT * debtAfter * debtAfter,
+      packedChar: _ecmSolveChars[flatIndex],
+      packedFg: _ecmSolveFgs[flatIndex],
+      packedVariant: _ecmSolveVariants[flatIndex],
+      packedBaseError: _ecmSolveBaseErrors[flatIndex],
+      packedBrightnessResidual: _ecmSolveBrightnessResiduals[flatIndex],
+    };
+  });
+
+  console.info(`[TruSkii3000] MCM solveScreen seed decision ${JSON.stringify({
+    cellIndex,
+    cx,
+    cy: Math.floor(cellIndex / GRID_WIDTH),
+    horizontalDebt: targetHorizontalDebt,
+    verticalDebt: targetVerticalDebt,
+    candidateCosts,
+  })}`);
 }
 
 const _reusableBinaryHamming = new Uint8Array(256);
@@ -2307,6 +2465,51 @@ function scoreMcmTripleOnSample(
   return best;
 }
 
+async function rankMcmTriplesOnSamplesJs(
+  sampleSummaries: McmSampleSummary[],
+  context: CharsetConversionContext,
+  metrics: PaletteMetricData,
+  candidateScreencodes: Uint16Array,
+  manualBgColor: number | null,
+  lumMatchWeight: number,
+  onProgress: ProgressCallback,
+  shouldCancel?: () => boolean
+): Promise<Array<{ triple: [number, number, number]; score: number }>> {
+  const triples = buildMcmTriples(manualBgColor);
+  const rankedTriples = new Array<{ triple: [number, number, number]; score: number }>(triples.length);
+
+  for (let tripleIndex = 0; tripleIndex < triples.length; tripleIndex++) {
+    const [bg, mc1, mc2] = triples[tripleIndex];
+    let score = 0;
+    for (let sample = 0; sample < sampleSummaries.length; sample++) {
+      score += sampleSummaries[sample].saliencyWeight *
+        scoreMcmTripleOnSample(
+          sampleSummaries[sample],
+          context,
+          metrics,
+          candidateScreencodes,
+          lumMatchWeight,
+          bg,
+          mc1,
+          mc2
+        );
+    }
+    rankedTriples[tripleIndex] = { triple: [bg, mc1, mc2], score };
+    if (tripleIndex % 96 === 0) {
+      onProgress(
+        'MCM globals',
+        `Coarse ${tripleIndex + 1} of ${triples.length} (bg=${bg}, mc1=${mc1}, mc2=${mc2})`,
+        Math.round((tripleIndex / Math.max(1, triples.length)) * 100)
+      );
+      await yieldToUI(shouldCancel);
+    }
+  }
+
+  rankedTriples.sort((a, b) => a.score - b.score);
+  rankedTriples.length = Math.min(MCM_FINALIST_COUNT, rankedTriples.length);
+  return rankedTriples;
+}
+
 function buildMcmCandidatePool(
   cell: SourceCellData,
   state: McmCellScoringState,
@@ -2679,15 +2882,7 @@ function runEdgeContinuityPass(
   }
 }
 
-function trySolveScreenWithKernel(
-  candidatePools: ScreenCandidate[][],
-  analysis: SourceAnalysis,
-  wasmKernel?: StandardCandidateScoringKernel
-): { selectedIndices: Int32Array; selected: ScreenCandidate[]; refinementInKernel: boolean } | null {
-  if (!wasmKernel?.solveSelectionWithNeighborPasses) {
-    return null;
-  }
-
+function populateSolveScratchFromCandidatePools(candidatePools: ScreenCandidate[][]) {
   for (let cellIndex = 0; cellIndex < CELL_COUNT; cellIndex++) {
     const pool = candidatePools[cellIndex];
     const count = Math.min(pool.length, 16);
@@ -2699,6 +2894,7 @@ function trySolveScreenWithKernel(
       const edgeBase = flatIndex * 8;
       _ecmSolveChars[flatIndex] = candidate.char;
       _ecmSolveFgs[flatIndex] = candidate.fg;
+      _ecmSolveVariants[flatIndex] = candidate.variant === 'mcm' ? 1 : 0;
       _ecmSolveBaseErrors[flatIndex] = candidate.baseError;
       _ecmSolveBrightnessResiduals[flatIndex] = candidate.brightnessResidual;
       _ecmSolveRepeatH[flatIndex] = candidate.repeatH;
@@ -2711,11 +2907,24 @@ function trySolveScreenWithKernel(
       _ecmSolveEdgeBottom.set(candidate.edgeBottom, edgeBase);
     }
   }
+}
+
+function trySolveScreenWithKernel(
+  candidatePools: ScreenCandidate[][],
+  analysis: SourceAnalysis,
+  wasmKernel?: StandardCandidateScoringKernel
+): { selectedIndices: Int32Array; selected: ScreenCandidate[]; refinementInKernel: boolean } | null {
+  if (!wasmKernel?.solveSelectionWithNeighborPasses) {
+    return null;
+  }
+
+  populateSolveScratchFromCandidatePools(candidatePools);
 
   const wasmSelectedIndices = wasmKernel.solveSelectionWithNeighborPasses(
     _ecmSolveCounts,
     _ecmSolveChars,
     _ecmSolveFgs,
+    _ecmSolveVariants,
     _ecmSolveBaseErrors,
     _ecmSolveBrightnessResiduals,
     _ecmSolveRepeatH,
@@ -2726,6 +2935,8 @@ function trySolveScreenWithKernel(
     _ecmSolveEdgeBottom,
     analysis.hBoundaryDiffs,
     analysis.vBoundaryDiffs,
+    analysis.hBoundaryMeans,
+    analysis.vBoundaryMeans,
     SCREEN_SOLVE_PASSES
   );
   const refinedSelectedIndices = wasmKernel.refineSelectionWithPostPasses
@@ -3292,6 +3503,7 @@ function copyCompactBinaryCandidateToSolveScratch(
   _ecmSolveChars[targetFlatIndex] = candidatePoolsByBackground.chars[sourceFlatIndex];
   _ecmSolveFgs[targetFlatIndex] = candidatePoolsByBackground.fgs[sourceFlatIndex];
   _ecmSolveBgs[targetFlatIndex] = bg;
+  _ecmSolveVariants[targetFlatIndex] = 0;
   _ecmSolveBaseErrors[targetFlatIndex] = candidatePoolsByBackground.baseErrors[sourceFlatIndex];
   _ecmSolveBrightnessResiduals[targetFlatIndex] = candidatePoolsByBackground.brightnessResiduals[sourceFlatIndex];
   _ecmSolveRepeatH[targetFlatIndex] = candidatePoolsByBackground.repeatH[sourceFlatIndex];
@@ -3757,6 +3969,7 @@ async function solveCompactBinaryScreenWithKernel(
     _ecmSolveCounts,
     _ecmSolveChars,
     _ecmSolveFgs,
+    _ecmSolveVariants,
     _ecmSolveBaseErrors,
     _ecmSolveBrightnessResiduals,
     _ecmSolveRepeatH,
@@ -3767,6 +3980,8 @@ async function solveCompactBinaryScreenWithKernel(
     _ecmSolveEdgeBottom,
     analysis.hBoundaryDiffs,
     analysis.vBoundaryDiffs,
+    analysis.hBoundaryMeans,
+    analysis.vBoundaryMeans,
     SCREEN_SOLVE_PASSES
   );
   const refinedSelectedIndices = wasmKernel.refineSelectionWithPostPasses(
@@ -4097,50 +4312,49 @@ async function solveMcmForCombo(
   const tGlobals0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const candidateScreencodes = getCandidateScreencodes(256, settings.includeTypographic);
   const foregroundsByBackground = getForegroundCandidatesByBackground(metrics, 8);
-  const sampleSummaries = sampleIndices.map(cellIndex =>
-    buildMcmSampleSummary(
-      analysis.cells[cellIndex],
-      cellIndex,
+  let rankedTriples: Array<{ triple: [number, number, number]; score: number }>;
+  if (scoringKernel?.rankModeTriples) {
+    onProgress('MCM globals', 'Coarse WASM triple ranking', 0);
+    await yieldToUI(shouldCancel);
+    rankedTriples = scoringKernel.rankModeTriples(
+      analysis.cells,
+      sampleIndices,
+      candidateScreencodes,
+      settings.manualBgColor,
+      MCM_FINALIST_COUNT,
+      metrics,
+      context,
+      {
+        lumMatchWeight: settings.lumMatchWeight,
+        csfWeight: settings.csfWeight,
+      }
+    );
+    onProgress('MCM globals', `Coarse WASM triple ranking (${rankedTriples.length} finalists)`, 100);
+    await yieldToUI(shouldCancel);
+  } else {
+    const sampleSummaries = sampleIndices.map(cellIndex =>
+      buildMcmSampleSummary(
+        analysis.cells[cellIndex],
+        cellIndex,
+        context,
+        metrics,
+        settings,
+        candidateScreencodes,
+        foregroundsByBackground,
+        scoringKernel
+      )
+    );
+    rankedTriples = await rankMcmTriplesOnSamplesJs(
+      sampleSummaries,
       context,
       metrics,
-      settings,
       candidateScreencodes,
-      foregroundsByBackground,
-      scoringKernel
-    )
-  );
-  const triples = buildMcmTriples(settings.manualBgColor);
-  const rankedTriples = new Array<{ triple: [number, number, number]; score: number }>(triples.length);
-
-  for (let tripleIndex = 0; tripleIndex < triples.length; tripleIndex++) {
-    const [bg, mc1, mc2] = triples[tripleIndex];
-    let score = 0;
-    for (let sample = 0; sample < sampleSummaries.length; sample++) {
-      score += sampleSummaries[sample].saliencyWeight *
-        scoreMcmTripleOnSample(
-          sampleSummaries[sample],
-          context,
-          metrics,
-          candidateScreencodes,
-          settings.lumMatchWeight,
-          bg,
-          mc1,
-          mc2
-        );
-    }
-    rankedTriples[tripleIndex] = { triple: [bg, mc1, mc2], score };
-    if (tripleIndex % 96 === 0) {
-      onProgress(
-        'MCM globals',
-        `Coarse ${tripleIndex + 1} of ${triples.length} (bg=${bg}, mc1=${mc1}, mc2=${mc2})`,
-        Math.round((tripleIndex / Math.max(1, triples.length)) * 100)
-      );
-      await yieldToUI(shouldCancel);
-    }
+      settings.manualBgColor,
+      settings.lumMatchWeight,
+      onProgress,
+      shouldCancel
+    );
   }
-
-  rankedTriples.sort((a, b) => a.score - b.score);
-  rankedTriples.length = Math.min(MCM_FINALIST_COUNT, rankedTriples.length);
   const tGlobals1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const cellStates = ENABLE_MCM_CELL_STATE_REUSE
     ? await buildMcmCellScoringStates(
@@ -4196,7 +4410,47 @@ async function solveMcmForCombo(
         );
     poolTime += (typeof performance !== 'undefined' ? performance.now() : Date.now()) - tPool0;
     const tSolve0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const solved = await solveScreen(candidatePools, analysis, metrics, shouldCancel, mcmWasmSolveKernel);
+    let solved: PetsciiResult & { selected: ScreenCandidate[] };
+    if (ENABLE_WASM_DIAGNOSTICS && mcmWasmSolveKernel && mcmSolveScreenChecksRemaining > 0) {
+      mcmSolveScreenChecksRemaining--;
+      populateSolveScratchFromCandidatePools(candidatePools);
+      const jsSeed = seedSelectionWithBrightnessDebt(candidatePools);
+      const wasmSeedIndices = mcmWasmSolveKernel.solveSelectionWithNeighborPasses(
+        _ecmSolveCounts,
+        _ecmSolveChars,
+        _ecmSolveFgs,
+        _ecmSolveVariants,
+        _ecmSolveBaseErrors,
+        _ecmSolveBrightnessResiduals,
+        _ecmSolveRepeatH,
+        _ecmSolveRepeatV,
+        _ecmSolveEdgeLeft,
+        _ecmSolveEdgeRight,
+        _ecmSolveEdgeTop,
+        _ecmSolveEdgeBottom,
+        analysis.hBoundaryDiffs,
+        analysis.vBoundaryDiffs,
+        analysis.hBoundaryMeans,
+        analysis.vBoundaryMeans,
+        0
+      );
+      const wasmSeed = new Array<ScreenCandidate>(CELL_COUNT);
+      for (let seedCellIndex = 0; seedCellIndex < CELL_COUNT; seedCellIndex++) {
+        const pool = candidatePools[seedCellIndex];
+        const selectedIndex = Math.min(pool.length - 1, wasmSeedIndices[seedCellIndex] ?? 0);
+        wasmSeed[seedCellIndex] = pool[selectedIndex];
+      }
+      const seedDiffIndex = compareSelectedCandidates('MCM solveScreen seed parity', jsSeed.selected, wasmSeed);
+      if (seedDiffIndex >= 0) {
+        logSeedDecisionDiagnostics(seedDiffIndex, candidatePools);
+      }
+      const jsSolved = await solveScreen(candidatePools, analysis, metrics, shouldCancel, undefined);
+      const wasmSolved = await solveScreen(candidatePools, analysis, metrics, shouldCancel, mcmWasmSolveKernel);
+      compareSolvedScreenResults('MCM solveScreen parity', jsSolved, wasmSolved);
+      solved = wasmSolved;
+    } else {
+      solved = await solveScreen(candidatePools, analysis, metrics, shouldCancel, mcmWasmSolveKernel);
+    }
     solveTime += (typeof performance !== 'undefined' ? performance.now() : Date.now()) - tSolve0;
     const conversion: ConversionResult = {
       screencodes: solved.screencodes,

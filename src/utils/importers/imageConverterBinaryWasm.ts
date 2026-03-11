@@ -54,6 +54,7 @@ type BinaryKernelExports = {
   getStandardSolveCountsPtr(): number;
   getStandardSolveCharsPtr(): number;
   getStandardSolveFgsPtr(): number;
+  getStandardSolveVariantsPtr(): number;
   getStandardSolveBaseErrorsPtr(): number;
   getStandardSolveBrightnessResidualsPtr(): number;
   getStandardSolveRepeatHPtr(): number;
@@ -66,6 +67,8 @@ type BinaryKernelExports = {
   getStandardSolveEdgeBottomPtr(): number;
   getStandardSolveHBoundaryDiffsPtr(): number;
   getStandardSolveVBoundaryDiffsPtr(): number;
+  getStandardSolveHBoundaryMeansPtr(): number;
+  getStandardSolveVBoundaryMeansPtr(): number;
   getStandardCellDetailScoresPtr(): number;
   getStandardCellGradientDirectionsPtr(): number;
   getStandardSolveSelectedIndicesPtr(): number;
@@ -241,6 +244,7 @@ export interface StandardCandidateScoringKernel {
     counts: Uint8Array,
     chars: Uint8Array,
     fgs: Uint8Array,
+    variants: Uint8Array,
     baseErrors: Float64Array,
     brightnessResiduals: Float64Array,
     repeatH: Float64Array,
@@ -251,6 +255,8 @@ export interface StandardCandidateScoringKernel {
     edgeBottom: Uint8Array,
     hBoundaryDiffs: Float32Array,
     vBoundaryDiffs: Float32Array,
+    hBoundaryMeans: Float32Array,
+    vBoundaryMeans: Float32Array,
     passCount: number
   ): Uint8Array;
   refineSelectionWithPostPasses?(
@@ -374,6 +380,7 @@ export class BinaryWasmKernel implements StandardCandidateScoringKernel {
   private standardSolveCountsView: Uint8Array;
   private standardSolveCharsView: Uint8Array;
   private standardSolveFgsView: Uint8Array;
+  private standardSolveVariantsView: Uint8Array;
   private standardSolveBaseErrorsView: Float64Array;
   private standardSolveBrightnessResidualsView: Float64Array;
   private standardSolveRepeatHView: Float64Array;
@@ -386,6 +393,8 @@ export class BinaryWasmKernel implements StandardCandidateScoringKernel {
   private standardSolveEdgeBottomView: Uint8Array;
   private standardSolveHBoundaryDiffsView: Float32Array;
   private standardSolveVBoundaryDiffsView: Float32Array;
+  private standardSolveHBoundaryMeansView: Float32Array;
+  private standardSolveVBoundaryMeansView: Float32Array;
   private standardCellDetailScoresView: Float32Array;
   private standardCellGradientDirectionsView: Uint8Array;
   private standardSolveSelectedIndicesView: Uint8Array;
@@ -549,6 +558,11 @@ export class BinaryWasmKernel implements StandardCandidateScoringKernel {
       exports.getStandardSolveFgsPtr(),
       40 * 25 * STANDARD_WASM_MAX_POOL_SIZE
     );
+    this.standardSolveVariantsView = new Uint8Array(
+      exports.memory.buffer,
+      exports.getStandardSolveVariantsPtr(),
+      40 * 25 * STANDARD_WASM_MAX_POOL_SIZE
+    );
     this.standardSolveBaseErrorsView = new Float64Array(
       exports.memory.buffer,
       exports.getStandardSolveBaseErrorsPtr(),
@@ -608,6 +622,16 @@ export class BinaryWasmKernel implements StandardCandidateScoringKernel {
       exports.memory.buffer,
       exports.getStandardSolveVBoundaryDiffsPtr(),
       24 * 40 * 8
+    );
+    this.standardSolveHBoundaryMeansView = new Float32Array(
+      exports.memory.buffer,
+      exports.getStandardSolveHBoundaryMeansPtr(),
+      25 * 39
+    );
+    this.standardSolveVBoundaryMeansView = new Float32Array(
+      exports.memory.buffer,
+      exports.getStandardSolveVBoundaryMeansPtr(),
+      24 * 40
     );
     this.standardCellDetailScoresView = new Float32Array(
       exports.memory.buffer,
@@ -870,6 +894,7 @@ export class BinaryWasmKernel implements StandardCandidateScoringKernel {
     counts: Uint8Array,
     chars: Uint8Array,
     fgs: Uint8Array,
+    variants: Uint8Array,
     baseErrors: Float64Array,
     brightnessResiduals: Float64Array,
     repeatH: Float64Array,
@@ -880,11 +905,14 @@ export class BinaryWasmKernel implements StandardCandidateScoringKernel {
     edgeBottom: Uint8Array,
     hBoundaryDiffs: Float32Array,
     vBoundaryDiffs: Float32Array,
+    hBoundaryMeans: Float32Array,
+    vBoundaryMeans: Float32Array,
     passCount: number
   ): Uint8Array {
     this.standardSolveCountsView.set(counts);
     this.standardSolveCharsView.set(chars);
     this.standardSolveFgsView.set(fgs);
+    this.standardSolveVariantsView.set(variants);
     this.standardSolveBaseErrorsView.set(baseErrors);
     this.standardSolveBrightnessResidualsView.set(brightnessResiduals);
     this.standardSolveRepeatHView.set(repeatH);
@@ -895,6 +923,8 @@ export class BinaryWasmKernel implements StandardCandidateScoringKernel {
     this.standardSolveEdgeBottomView.set(edgeBottom);
     this.standardSolveHBoundaryDiffsView.set(hBoundaryDiffs);
     this.standardSolveVBoundaryDiffsView.set(vBoundaryDiffs);
+    this.standardSolveHBoundaryMeansView.set(hBoundaryMeans);
+    this.standardSolveVBoundaryMeansView.set(vBoundaryMeans);
     this.exports.computeStandardSolveSelection(passCount);
     return this.standardSolveSelectedIndicesView;
   }

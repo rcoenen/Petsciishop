@@ -32,6 +32,10 @@ const BIT_PAIR_ERR_COUNT: i32 = CHAR_COUNT * 4 * COLOR_COUNT;
 const PAIR_DIFF_COUNT: i32 = COLOR_COUNT * COLOR_COUNT;
 const MODE_WEIGHTED_PIXEL_ERROR_COUNT: i32 = CELL_COUNT * PIXEL_COUNT * COLOR_COUNT;
 const MODE_WEIGHTED_PAIR_ERROR_COUNT: i32 = CELL_COUNT * PAIR_COUNT * COLOR_COUNT;
+const BINARY_MIX_COUNT: i32 = (PIXEL_COUNT + 1) * COLOR_COUNT * COLOR_COUNT;
+const MAX_MCM_SAMPLE_COUNT: i32 = 64;
+const MAX_MCM_TRIPLE_COUNT: i32 = COLOR_COUNT * (COLOR_COUNT - 1) * (COLOR_COUNT - 2);
+const MAX_MCM_FINALIST_COUNT: i32 = 16;
 
 // Per-pixel error table used by the MCM hires path:
 // [64 pixels][16 palette colors].
@@ -66,6 +70,24 @@ const packedMcmGlyphMasks3 = new Uint32Array(CHAR_COUNT);
 const outputSetErrs = new Float32Array(SET_ERR_COUNT);
 const outputBitPairErrs = new Float32Array(BIT_PAIR_ERR_COUNT);
 const outputHamming = new Uint8Array(CHAR_COUNT);
+const rankSampleCellIndices = new Int32Array(MAX_MCM_SAMPLE_COUNT);
+const rankSampleAvgL = new Float64Array(MAX_MCM_SAMPLE_COUNT);
+const rankSampleDetailScores = new Float64Array(MAX_MCM_SAMPLE_COUNT);
+const rankSampleSaliencyWeights = new Float64Array(MAX_MCM_SAMPLE_COUNT);
+const rankSampleTotalErrByColor = new Float32Array(MAX_MCM_SAMPLE_COUNT * COLOR_COUNT);
+const rankCandidateScreencodes = new Uint16Array(CHAR_COUNT);
+const rankRefSetCount = new Int32Array(CHAR_COUNT);
+const rankGlyphSpatialFrequency = new Float32Array(CHAR_COUNT);
+const rankRefMcmBpCounts = new Uint8Array(CHAR_COUNT * 4);
+const rankBinaryMixL = new Float64Array(BINARY_MIX_COUNT);
+const rankPaletteL = new Float64Array(COLOR_COUNT);
+const rankContrastMask = new Uint8Array(COLOR_COUNT * 8);
+const rankTripleScores = new Float64Array(MAX_MCM_TRIPLE_COUNT);
+const rankTopBgs = new Uint8Array(MAX_MCM_FINALIST_COUNT);
+const rankTopMc1s = new Uint8Array(MAX_MCM_FINALIST_COUNT);
+const rankTopMc2s = new Uint8Array(MAX_MCM_FINALIST_COUNT);
+const rankTopScores = new Float64Array(MAX_MCM_FINALIST_COUNT);
+const rankBestHiresCostByBg = new Float64Array(COLOR_COUNT);
 
 export function getWeightedPixelErrorsPtr(): usize { return weightedPixelErrors.dataStart; }
 export function getWeightedPairErrorsPtr(): usize { return weightedPairErrors.dataStart; }
@@ -90,6 +112,22 @@ export function getPackedMcmGlyphMasks3Ptr(): usize { return packedMcmGlyphMasks
 export function getOutputSetErrsPtr(): usize { return outputSetErrs.dataStart; }
 export function getOutputBitPairErrsPtr(): usize { return outputBitPairErrs.dataStart; }
 export function getOutputHammingPtr(): usize { return outputHamming.dataStart; }
+export function getRankSampleCellIndicesPtr(): usize { return rankSampleCellIndices.dataStart; }
+export function getRankSampleAvgLPtr(): usize { return rankSampleAvgL.dataStart; }
+export function getRankSampleDetailScoresPtr(): usize { return rankSampleDetailScores.dataStart; }
+export function getRankSampleSaliencyWeightsPtr(): usize { return rankSampleSaliencyWeights.dataStart; }
+export function getRankSampleTotalErrByColorPtr(): usize { return rankSampleTotalErrByColor.dataStart; }
+export function getRankCandidateScreencodesPtr(): usize { return rankCandidateScreencodes.dataStart; }
+export function getRankRefSetCountPtr(): usize { return rankRefSetCount.dataStart; }
+export function getRankGlyphSpatialFrequencyPtr(): usize { return rankGlyphSpatialFrequency.dataStart; }
+export function getRankRefMcmBpCountsPtr(): usize { return rankRefMcmBpCounts.dataStart; }
+export function getRankBinaryMixLPtr(): usize { return rankBinaryMixL.dataStart; }
+export function getRankPaletteLPtr(): usize { return rankPaletteL.dataStart; }
+export function getRankContrastMaskPtr(): usize { return rankContrastMask.dataStart; }
+export function getRankTopBgsPtr(): usize { return rankTopBgs.dataStart; }
+export function getRankTopMc1sPtr(): usize { return rankTopMc1s.dataStart; }
+export function getRankTopMc2sPtr(): usize { return rankTopMc2s.dataStart; }
+export function getRankTopScoresPtr(): usize { return rankTopScores.dataStart; }
 
 function zero16(ptr: usize, zero: v128): void {
   // Store 16 f32 zeros using 4 SIMD writes.
@@ -173,4 +211,217 @@ export function computeHammingDistances(): void {
       popcnt<u32>(threshold3 & packedMcmGlyphMasks3[ch]);
     outputHamming[ch] = <u8>(PAIR_COUNT - matched);
   }
+}
+
+function computeCsfPenalty(detailScore: f64, glyphSpatialFrequency: f64, csfWeight: f64): f64 {
+  if (csfWeight <= 0.0) return 0.0;
+  const detailSlack = 1.0 - detailScore;
+  return csfWeight * glyphSpatialFrequency * (detailSlack > 0.0 ? detailSlack : 0.0);
+}
+
+function binaryMixIndex(setCount: i32, bg: i32, fg: i32): i32 {
+  return ((setCount * COLOR_COUNT) + bg) * COLOR_COUNT + fg;
+}
+
+function rankHasContrast(fg: i32, bg: i32): bool {
+  return rankContrastMask[bg * 8 + fg] != 0;
+}
+
+function computeBestHiresCostByBackgroundForSample(
+  sampleIndex: i32,
+  candidateCount: i32,
+  lumMatchWeight: f64,
+  csfWeight: f64
+): void {
+  for (let bg: i32 = 0; bg < COLOR_COUNT; bg++) {
+    rankBestHiresCostByBg[bg] = Infinity;
+  }
+
+  const avgL = rankSampleAvgL[sampleIndex];
+  const detailScore = rankSampleDetailScores[sampleIndex];
+  const totalErrBase = sampleIndex * COLOR_COUNT;
+
+  for (let candidateIndex: i32 = 0; candidateIndex < candidateCount; candidateIndex++) {
+    const ch = <i32>rankCandidateScreencodes[candidateIndex];
+    const csfPenalty = computeCsfPenalty(detailScore, <f64>rankGlyphSpatialFrequency[ch], csfWeight);
+    const hiresBase = ch << 4;
+    const nSet = rankRefSetCount[ch];
+
+    for (let bg: i32 = 0; bg < COLOR_COUNT; bg++) {
+      const bgErr = <f64>rankSampleTotalErrByColor[totalErrBase + bg] - <f64>outputSetErrs[hiresBase + bg];
+      if (bgErr >= rankBestHiresCostByBg[bg]) continue;
+
+      for (let fg: i32 = 0; fg < 8; fg++) {
+        if (fg == bg) continue;
+        if (!rankHasContrast(fg, bg)) continue;
+
+        const mixIndex = binaryMixIndex(nSet, bg, fg);
+        const lumDiff = avgL - rankBinaryMixL[mixIndex];
+        const total =
+          bgErr +
+          <f64>outputSetErrs[hiresBase + fg] +
+          csfPenalty +
+          lumMatchWeight * lumDiff * lumDiff;
+
+        if (total < rankBestHiresCostByBg[bg]) {
+          rankBestHiresCostByBg[bg] = total;
+        }
+      }
+    }
+  }
+}
+
+function resetRankTopScores(finalistCount: i32): void {
+  for (let i: i32 = 0; i < finalistCount; i++) {
+    rankTopScores[i] = Infinity;
+    rankTopBgs[i] = 0;
+    rankTopMc1s[i] = 0;
+    rankTopMc2s[i] = 0;
+  }
+}
+
+export function rankModeTriples(
+  sampleCount: i32,
+  candidateCount: i32,
+  finalistCount: i32,
+  lumMatchWeight: f64,
+  csfWeight: f64,
+  manualBgColor: i32
+): i32 {
+  const clampedSampleCount = sampleCount > MAX_MCM_SAMPLE_COUNT ? MAX_MCM_SAMPLE_COUNT : sampleCount;
+  const clampedCandidateCount = candidateCount > CHAR_COUNT ? CHAR_COUNT : candidateCount;
+  const clampedFinalistCount = finalistCount > MAX_MCM_FINALIST_COUNT ? MAX_MCM_FINALIST_COUNT : finalistCount;
+
+  let tripleCount: i32 = 0;
+  for (let bg: i32 = 0; bg < COLOR_COUNT; bg++) {
+    if (manualBgColor >= 0 && bg != manualBgColor) continue;
+    for (let mc1: i32 = 0; mc1 < COLOR_COUNT; mc1++) {
+      if (mc1 == bg) continue;
+      for (let mc2: i32 = 0; mc2 < COLOR_COUNT; mc2++) {
+        if (mc2 == bg || mc2 == mc1) continue;
+        rankTripleScores[tripleCount] = 0.0;
+        tripleCount++;
+      }
+    }
+  }
+
+  for (let sampleIndex: i32 = 0; sampleIndex < clampedSampleCount; sampleIndex++) {
+    const cellIndex = rankSampleCellIndices[sampleIndex];
+    const sampleWeight = rankSampleSaliencyWeights[sampleIndex];
+    const pixelBasePtr = modeWeightedPixelErrors.dataStart + (<usize>(cellIndex * PIXEL_COUNT * COLOR_COUNT) << 2);
+    const pairBasePtr = modeWeightedPairErrors.dataStart + (<usize>(cellIndex * PAIR_COUNT * COLOR_COUNT) << 2);
+    computeMatricesFromBase(pixelBasePtr, pairBasePtr);
+    computeBestHiresCostByBackgroundForSample(
+      sampleIndex,
+      clampedCandidateCount,
+      lumMatchWeight,
+      csfWeight
+    );
+
+    const avgL = rankSampleAvgL[sampleIndex];
+    const detailScore = rankSampleDetailScores[sampleIndex];
+    const detailSlack = 1.0 - detailScore;
+    const safeDetailSlack = detailSlack > 0.0 ? detailSlack : 0.0;
+    let tripleIndex: i32 = 0;
+
+    for (let bg: i32 = 0; bg < COLOR_COUNT; bg++) {
+      if (manualBgColor >= 0 && bg != manualBgColor) continue;
+      for (let mc1: i32 = 0; mc1 < COLOR_COUNT; mc1++) {
+        if (mc1 == bg) continue;
+        for (let mc2: i32 = 0; mc2 < COLOR_COUNT; mc2++) {
+          if (mc2 == bg || mc2 == mc1) continue;
+
+          let best = rankBestHiresCostByBg[bg];
+          for (let candidateIndex: i32 = 0; candidateIndex < clampedCandidateCount; candidateIndex++) {
+            const ch = <i32>rankCandidateScreencodes[candidateIndex];
+            const csfPenalty = csfWeight > 0.0
+              ? csfWeight * <f64>rankGlyphSpatialFrequency[ch] * safeDetailSlack
+              : 0.0;
+            const bpBase = ch * 64;
+            const fixedErr =
+              <f64>outputBitPairErrs[bpBase + bg] +
+              <f64>outputBitPairErrs[bpBase + 16 + mc1] +
+              <f64>outputBitPairErrs[bpBase + 32 + mc2];
+
+            if (2.0 * fixedErr >= best) continue;
+
+            const countsBase = ch * 4;
+            const count0 = <f64>rankRefMcmBpCounts[countsBase];
+            const count1 = <f64>rankRefMcmBpCounts[countsBase + 1];
+            const count2 = <f64>rankRefMcmBpCounts[countsBase + 2];
+            const count3 = <i32>rankRefMcmBpCounts[countsBase + 3];
+            const fixedL =
+              count0 * rankPaletteL[bg] +
+              count1 * rankPaletteL[mc1] +
+              count2 * rankPaletteL[mc2];
+            const bp3Base = bpBase + 48;
+
+            if (count3 == 0) {
+              const lumDiff = avgL - (fixedL / <f64>PAIR_COUNT);
+              const total =
+                2.0 * fixedErr +
+                lumMatchWeight * lumDiff * lumDiff +
+                csfPenalty;
+              if (total < best) best = total;
+              continue;
+            }
+
+            for (let fg: i32 = 0; fg < 8; fg++) {
+              if (!rankHasContrast(fg, bg)) continue;
+              const lumDiff = avgL - ((fixedL + <f64>count3 * rankPaletteL[fg]) / <f64>PAIR_COUNT);
+              const total =
+                2.0 * (fixedErr + <f64>outputBitPairErrs[bp3Base + fg]) +
+                lumMatchWeight * lumDiff * lumDiff +
+                csfPenalty;
+              if (total < best) best = total;
+            }
+          }
+
+          rankTripleScores[tripleIndex] += sampleWeight * best;
+          tripleIndex++;
+        }
+      }
+    }
+  }
+
+  resetRankTopScores(clampedFinalistCount);
+  let selectedCount: i32 = 0;
+  let tripleIndex: i32 = 0;
+  for (let bg: i32 = 0; bg < COLOR_COUNT; bg++) {
+    if (manualBgColor >= 0 && bg != manualBgColor) continue;
+    for (let mc1: i32 = 0; mc1 < COLOR_COUNT; mc1++) {
+      if (mc1 == bg) continue;
+      for (let mc2: i32 = 0; mc2 < COLOR_COUNT; mc2++) {
+        if (mc2 == bg || mc2 == mc1) continue;
+
+        const score = rankTripleScores[tripleIndex];
+        if (selectedCount >= clampedFinalistCount && score >= rankTopScores[clampedFinalistCount - 1]) {
+          tripleIndex++;
+          continue;
+        }
+
+        let insertAt = selectedCount < clampedFinalistCount ? selectedCount : clampedFinalistCount - 1;
+        while (insertAt > 0 && score < rankTopScores[insertAt - 1]) {
+          if (insertAt < clampedFinalistCount) {
+            rankTopScores[insertAt] = rankTopScores[insertAt - 1];
+            rankTopBgs[insertAt] = rankTopBgs[insertAt - 1];
+            rankTopMc1s[insertAt] = rankTopMc1s[insertAt - 1];
+            rankTopMc2s[insertAt] = rankTopMc2s[insertAt - 1];
+          }
+          insertAt--;
+        }
+
+        rankTopScores[insertAt] = score;
+        rankTopBgs[insertAt] = <u8>bg;
+        rankTopMc1s[insertAt] = <u8>mc1;
+        rankTopMc2s[insertAt] = <u8>mc2;
+        if (selectedCount < clampedFinalistCount) {
+          selectedCount++;
+        }
+        tripleIndex++;
+      }
+    }
+  }
+
+  return selectedCount;
 }
