@@ -2,13 +2,14 @@ import {
   buildCharsetConversionContext as buildModeCharsetConversionContext,
   buildPaletteColorsById as buildModePaletteColorsById,
   buildPaletteMetricData as buildModePaletteMetricData,
+  type CompactModeWorkerConversion,
+  type ConverterCharset,
   type ProgressCallback as ModeProgressCallback,
   solveModeOffsetWorker,
 } from './imageConverter';
 import type {
   BinaryCandidateScoringKernel,
   CharsetConversionContext as ModeCharsetConversionContext,
-  ConverterCharset,
   McmCandidateScoringKernel,
   PaletteMetricData as ModePaletteMetricData,
   PreprocessedFittedImage,
@@ -29,9 +30,15 @@ import type {
 import { BinaryWasmKernel, type StandardWasmRequestSession } from './imageConverterBinaryWasm';
 import { McmWasmKernel } from './imageConverterMcmWasm';
 import type {
+  ConverterWorkerProgressMessage,
   ConverterWorkerRequestMessage,
   ConverterWorkerResponseMessage,
+  ModeWorkerProgressCheckpoint,
+  ConverterWorkerModeFinalResultMessage,
+  ConverterWorkerModeOffsetScoreMessage,
 } from './imageConverterWorkerProtocol';
+
+type StoredModeSolveResult = NonNullable<Awaited<ReturnType<typeof solveModeOffsetWorker>>>;
 
 type WorkerState = {
   standardContexts: Record<ConverterCharset, CharsetConversionContext> | null;
@@ -42,6 +49,10 @@ type WorkerState = {
     preprocessed: Parameters<typeof solveStandardOffset>[0];
     settings: Parameters<typeof solveStandardOffset>[1];
     standardWasmSession?: StandardWasmRequestSession;
+    bestModeResult?: {
+      offsetId: number;
+      candidate: StoredModeSolveResult;
+    };
   }>;
   standardPaletteCache: Map<string, PaletteMetricData>;
   modePaletteCache: Map<string, ModePaletteMetricData>;
@@ -63,8 +74,107 @@ const state: WorkerState = {
   mcmScoringKernel: null,
 };
 
-function post(message: ConverterWorkerResponseMessage) {
-  self.postMessage(message);
+function post(message: ConverterWorkerResponseMessage, transfer: Transferable[] = []) {
+  self.postMessage(message, transfer);
+}
+
+function splitModeProgressDetail(detail: string): {
+  charset?: ConverterCharset;
+  detail: string;
+} {
+  if (detail.startsWith('UPPER')) {
+    return {
+      charset: 'upper',
+      detail: detail.startsWith('UPPER - ') ? detail.slice('UPPER - '.length) : '',
+    };
+  }
+  if (detail.startsWith('LOWER')) {
+    return {
+      charset: 'lower',
+      detail: detail.startsWith('LOWER - ') ? detail.slice('LOWER - '.length) : '',
+    };
+  }
+  return { detail };
+}
+
+function buildModeProgressCheckpoint(
+  mode: 'ecm' | 'mcm',
+  stage: string,
+  detail: string
+): ModeWorkerProgressCheckpoint | undefined {
+  const parsed = splitModeProgressDetail(detail);
+
+  if (mode === 'ecm' && stage === 'Converting') {
+    const backgroundsMatch = parsed.detail.match(/^ECM backgrounds ([0-9,]+) \((\d+)\/(\d+)\)$/);
+    if (backgroundsMatch) {
+      return {
+        kind: 'ecm-backgrounds',
+        charset: parsed.charset,
+        current: Number(backgroundsMatch[2]),
+        total: Number(backgroundsMatch[3]),
+      };
+    }
+
+    const resolveMatch = parsed.detail.match(/^ECM register re-solve \((\d+)\/(\d+)\)$/);
+    if (resolveMatch) {
+      return {
+        kind: 'ecm-register-resolve',
+        charset: parsed.charset,
+        current: Number(resolveMatch[1]),
+        total: Number(resolveMatch[2]),
+      };
+    }
+  }
+
+  if (mode === 'mcm') {
+    if (stage === 'MCM globals') {
+      return {
+        kind: 'mcm-globals',
+        charset: parsed.charset,
+      };
+    }
+
+    if (stage === 'Converting') {
+      const comboMatch = parsed.detail.match(/^MCM bg=(\d+), mc1=(\d+), mc2=(\d+) \((\d+)\/(\d+)\)$/);
+      if (comboMatch) {
+        return {
+          kind: 'mcm-combo',
+          charset: parsed.charset,
+          bg: Number(comboMatch[1]),
+          mc1: Number(comboMatch[2]),
+          mc2: Number(comboMatch[3]),
+          current: Number(comboMatch[4]),
+          total: Number(comboMatch[5]),
+        };
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function getModeResultTransfers(conversion: CompactModeWorkerConversion): Transferable[] {
+  return [
+    conversion.screencodes.buffer,
+    conversion.colors.buffer,
+    conversion.ecmBgColors.buffer,
+    conversion.bgIndices.buffer,
+    conversion.mcmSharedColors.buffer,
+  ];
+}
+
+function toCompactModeWorkerConversion(candidate: StoredModeSolveResult): CompactModeWorkerConversion {
+  return {
+    screencodes: Uint8Array.from(candidate.result.screencodes),
+    colors: Uint8Array.from(candidate.result.colors),
+    backgroundColor: candidate.conversion.backgroundColor,
+    ecmBgColors: Uint8Array.from(candidate.conversion.ecmBgColors),
+    bgIndices: Uint8Array.from(candidate.conversion.bgIndices),
+    mcmSharedColors: Uint8Array.from(candidate.conversion.mcmSharedColors),
+    charset: candidate.conversion.charset,
+    mode: candidate.conversion.mode as 'ecm' | 'mcm',
+    accelerationBackend: candidate.conversion.accelerationBackend,
+  };
 }
 
 function getStandardMetrics(paletteId: string) {
@@ -182,7 +292,7 @@ self.onmessage = async (event: MessageEvent<ConverterWorkerRequestMessage>) => {
         if (!state.activeRequests.has(message.requestId)) {
           return;
         }
-        post({
+        const progressMessage: ConverterWorkerProgressMessage = {
           type: 'progress',
           requestId: message.requestId,
           mode: message.mode,
@@ -190,7 +300,11 @@ self.onmessage = async (event: MessageEvent<ConverterWorkerRequestMessage>) => {
           stage,
           detail,
           pct,
-        });
+          checkpoint: message.mode === 'standard'
+            ? undefined
+            : buildModeProgressCheckpoint(message.mode, stage, detail),
+        };
+        post(progressMessage);
       }) as StandardProgressCallback & ModeProgressCallback;
       const result = message.mode === 'standard'
         ? await solveStandardOffset(
@@ -233,14 +347,69 @@ self.onmessage = async (event: MessageEvent<ConverterWorkerRequestMessage>) => {
         post({ type: 'cancelled', requestId: message.requestId, offsetId: message.offsetId });
         return;
       }
-      post({
-        type: 'offset-result',
+      if (message.mode === 'standard') {
+        post({
+          type: 'offset-result',
+          requestId: message.requestId,
+          mode: 'standard',
+          offsetId: message.offsetId,
+          conversion: result.conversion,
+          error: result.error,
+        });
+        return;
+      }
+
+      const modeResult = result as StoredModeSolveResult;
+      if (!request.bestModeResult || modeResult.error < request.bestModeResult.candidate.error) {
+        request.bestModeResult = {
+          offsetId: message.offsetId,
+          candidate: modeResult,
+        };
+      }
+      const scoreMessage: ConverterWorkerModeOffsetScoreMessage = {
+        type: 'mode-offset-score',
         requestId: message.requestId,
         mode: message.mode,
         offsetId: message.offsetId,
-        conversion: result.conversion,
-        error: result.error,
-      });
+        error: modeResult.error,
+      };
+      post(scoreMessage);
+      return;
+    }
+
+    if (message.type === 'finalize-mode-offset') {
+      const request = state.requestData.get(message.requestId);
+      if (!request) {
+        throw new Error(`Unknown worker request ${message.requestId}`);
+      }
+      if (!state.activeRequests.has(message.requestId)) {
+        post({ type: 'cancelled', requestId: message.requestId, offsetId: message.offsetId });
+        return;
+      }
+      const best = request.bestModeResult;
+      if (!best) {
+        throw new Error(`No stored ${message.mode.toUpperCase()} worker result for request ${message.requestId}`);
+      }
+      if (best.offsetId !== message.offsetId) {
+        throw new Error(
+          `Stored ${message.mode.toUpperCase()} worker result mismatch: expected offset ${message.offsetId}, got ${best.offsetId}`
+        );
+      }
+      if (best.candidate.conversion.mode !== message.mode) {
+        throw new Error(
+          `Stored worker result mode mismatch: expected ${message.mode}, got ${best.candidate.conversion.mode}`
+        );
+      }
+      const conversion = toCompactModeWorkerConversion(best.candidate);
+      const finalMessage: ConverterWorkerModeFinalResultMessage = {
+        type: 'mode-final-result',
+        requestId: message.requestId,
+        mode: message.mode,
+        offsetId: message.offsetId,
+        conversion,
+        error: best.candidate.error,
+      };
+      post(finalMessage, getModeResultTransfers(conversion));
       return;
     }
   } catch (error: any) {

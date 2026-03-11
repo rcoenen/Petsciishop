@@ -251,11 +251,15 @@ class StandardWorkerPool {
     }
 
     if (message.type === 'offset-result') {
+      if (message.mode !== 'standard') {
+        this.failActiveRequest(new Error(`Worker mode mismatch: expected standard, got ${message.mode}`));
+        return;
+      }
       this.releaseSlot(slot);
       active.completed += 1;
       active.inflight -= 1;
       const solved: StandardSolvedModeCandidate = {
-        conversion: message.conversion,
+        conversion: message.conversion as StandardSolvedModeCandidate['conversion'],
         error: message.error,
         executionPath: this.backend,
         offset: slot.currentOffset ?? { x: 0, y: 0 },

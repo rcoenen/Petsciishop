@@ -1,12 +1,29 @@
 import type {
+  CompactModeWorkerConversion,
   ConverterFontBits,
   ConverterSettings,
   ConversionResult,
+  ConverterCharset,
 } from './imageConverter';
 import type { AlignmentOffset, StandardPreprocessedImage } from './imageConverterStandardCore';
 import type { PreprocessedFittedImage } from './imageConverter';
 
 export type WorkerMode = 'standard' | 'ecm' | 'mcm';
+export type ModeWorkerProgressCheckpointKind =
+  | 'ecm-backgrounds'
+  | 'ecm-register-resolve'
+  | 'mcm-globals'
+  | 'mcm-combo';
+
+export interface ModeWorkerProgressCheckpoint {
+  kind: ModeWorkerProgressCheckpointKind;
+  charset?: ConverterCharset;
+  current?: number;
+  total?: number;
+  bg?: number;
+  mc1?: number;
+  mc2?: number;
+}
 
 export interface ConverterWorkerInitMessage {
   type: 'init';
@@ -30,6 +47,13 @@ export interface ConverterWorkerSolveOffsetMessage {
   offset: AlignmentOffset;
 }
 
+export interface ConverterWorkerFinalizeModeOffsetMessage {
+  type: 'finalize-mode-offset';
+  requestId: number;
+  mode: Exclude<WorkerMode, 'standard'>;
+  offsetId: number;
+}
+
 export interface ConverterWorkerCancelMessage {
   type: 'cancel';
   requestId: number;
@@ -39,6 +63,7 @@ export type ConverterWorkerRequestMessage =
   | ConverterWorkerInitMessage
   | ConverterWorkerStartRequestMessage
   | ConverterWorkerSolveOffsetMessage
+  | ConverterWorkerFinalizeModeOffsetMessage
   | ConverterWorkerCancelMessage;
 
 export interface ConverterWorkerReadyMessage {
@@ -50,9 +75,26 @@ export interface ConverterWorkerReadyMessage {
 export interface ConverterWorkerOffsetResultMessage {
   type: 'offset-result';
   requestId: number;
-  mode: WorkerMode;
+  mode: 'standard';
   offsetId: number;
   conversion: ConversionResult;
+  error: number;
+}
+
+export interface ConverterWorkerModeOffsetScoreMessage {
+  type: 'mode-offset-score';
+  requestId: number;
+  mode: Exclude<WorkerMode, 'standard'>;
+  offsetId: number;
+  error: number;
+}
+
+export interface ConverterWorkerModeFinalResultMessage {
+  type: 'mode-final-result';
+  requestId: number;
+  mode: Exclude<WorkerMode, 'standard'>;
+  offsetId: number;
+  conversion: CompactModeWorkerConversion;
   error: number;
 }
 
@@ -64,6 +106,7 @@ export interface ConverterWorkerProgressMessage {
   stage: string;
   detail: string;
   pct: number;
+  checkpoint?: ModeWorkerProgressCheckpoint;
 }
 
 export interface ConverterWorkerCancelledMessage {
@@ -81,6 +124,8 @@ export interface ConverterWorkerErrorMessage {
 
 export type ConverterWorkerResponseMessage =
   | ConverterWorkerReadyMessage
+  | ConverterWorkerModeOffsetScoreMessage
+  | ConverterWorkerModeFinalResultMessage
   | ConverterWorkerProgressMessage
   | ConverterWorkerOffsetResultMessage
   | ConverterWorkerCancelledMessage

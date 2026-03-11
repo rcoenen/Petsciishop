@@ -22,6 +22,13 @@ type OffsetJob = {
   offset: AlignmentOffset;
 };
 
+type BestModeOffset = {
+  workerId: number;
+  offsetId: number;
+  offset: AlignmentOffset;
+  error: number;
+};
+
 type WorkerSlot = {
   id: number;
   worker: Worker;
@@ -39,8 +46,9 @@ type ActiveRequest = {
   inflight: number;
   completed: number;
   total: number;
-  best?: WorkerSolvedModeCandidate;
+  best?: BestModeOffset;
   cancelled: boolean;
+  finalizing: boolean;
   cancelTimer: ReturnType<typeof setInterval> | null;
   startedAt: number;
   onProgress: ProgressCallback;
@@ -190,6 +198,7 @@ class ModeWorkerPool {
       completed: 0,
       total: queue.length,
       cancelled: false,
+      finalizing: false,
       cancelTimer: null,
       startedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(),
       onProgress,
@@ -258,7 +267,7 @@ class ModeWorkerPool {
       return;
     }
 
-    if (message.type === 'offset-result') {
+    if (message.type === 'mode-offset-score') {
       if (message.mode !== active.mode) {
         this.failActiveRequest(new Error(`Worker mode mismatch: expected ${active.mode}, got ${message.mode}`));
         return;
@@ -266,8 +275,9 @@ class ModeWorkerPool {
       this.releaseSlot(slot);
       active.completed += 1;
       active.inflight -= 1;
-      const solved: WorkerSolvedModeCandidate = {
-        conversion: message.conversion,
+      const solved: BestModeOffset = {
+        workerId: slot.id,
+        offsetId: message.offsetId,
         error: message.error,
         offset: slot.currentOffset ?? { x: 0, y: 0 },
       };
@@ -281,6 +291,40 @@ class ModeWorkerPool {
       );
       this.fillIdleWorkers();
       this.maybeFinish();
+      return;
+    }
+
+    if (message.type === 'mode-final-result') {
+      if (message.mode !== active.mode) {
+        this.failActiveRequest(new Error(`Worker mode mismatch: expected ${active.mode}, got ${message.mode}`));
+        return;
+      }
+      const best = active.best;
+      if (!best) {
+        this.failActiveRequest(new Error(`Missing ${active.mode.toUpperCase()} best worker result.`));
+        return;
+      }
+      if (message.offsetId !== best.offsetId) {
+        this.failActiveRequest(
+          new Error(`Worker finalized offset ${message.offsetId}, expected ${best.offsetId} for ${active.mode.toUpperCase()}.`)
+        );
+        return;
+      }
+      this.releaseSlot(slot);
+      const elapsedMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - active.startedAt;
+      console.info(`[TruSkii3000] ${active.mode.toUpperCase()} conversion finished.`, {
+        backend: this.backendByMode[active.mode],
+        alignments: active.total,
+        elapsedMs: Math.round(elapsedMs),
+        elapsedSeconds: Number((elapsedMs / 1000).toFixed(2)),
+      });
+      this.cleanupRequestData(active.requestId);
+      this.clearActiveRequest();
+      active.resolve({
+        conversion: message.conversion,
+        error: message.error,
+        offset: best.offset,
+      });
       return;
     }
 
@@ -331,17 +375,32 @@ class ModeWorkerPool {
       return;
     }
     if (active.completed === active.total && active.inflight === 0) {
-      const result = active.best;
-      const elapsedMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - active.startedAt;
-      console.info(`[TruSkii3000] ${active.mode.toUpperCase()} conversion finished.`, {
-        backend: this.backendByMode[active.mode],
-        alignments: active.total,
-        elapsedMs: Math.round(elapsedMs),
-        elapsedSeconds: Number((elapsedMs / 1000).toFixed(2)),
-      });
-      this.cleanupRequestData(active.requestId);
-      this.clearActiveRequest();
-      active.resolve(result);
+      if (!active.best) {
+        this.cleanupRequestData(active.requestId);
+        this.clearActiveRequest();
+        active.resolve(undefined);
+        return;
+      }
+      if (active.finalizing) {
+        return;
+      }
+      const slot = this.slots.find(workerSlot => workerSlot.id === active.best!.workerId);
+      if (!slot) {
+        this.failActiveRequest(new Error(`Missing worker ${active.best.workerId} for ${active.mode.toUpperCase()} finalization.`));
+        return;
+      }
+      active.finalizing = true;
+      slot.busy = true;
+      slot.currentRequestId = active.requestId;
+      slot.currentOffsetId = active.best.offsetId;
+      slot.currentOffset = active.best.offset;
+      slot.currentProgressPct = 100;
+      slot.worker.postMessage({
+        type: 'finalize-mode-offset',
+        requestId: active.requestId,
+        mode: active.mode,
+        offsetId: active.best.offsetId,
+      } satisfies ConverterWorkerRequestMessage);
     }
   }
 
@@ -354,7 +413,7 @@ class ModeWorkerPool {
         type: 'cancel',
         requestId: active.requestId,
       } satisfies ConverterWorkerRequestMessage);
-      if (fromDispose && slot.currentRequestId === active.requestId) {
+      if ((fromDispose || active.finalizing) && slot.currentRequestId === active.requestId) {
         this.releaseSlot(slot);
       }
     });

@@ -87,7 +87,7 @@ The capstone: move the full conversion engine into WASM while keeping JavaScript
 | 6.1 | **Standard full solver core in WASM** | ✅ Complete | Resident state, host API, coarse background ranking, candidate pools, iterative solve passes, refinement/post-passes, finalization, and wildcard admission now execute in WASM for Standard |
 | 6.2 | **ECM/MCM full solver cores in WASM** | ✅ Complete | ECM and MCM screen solve + refinement now run in WASM via shared kernel entrypoints. Per-cell scoring (computeSetErrs / computeMatrices), MCM coarse triple ranking, and MCM per-cell candidate-pool construction also use WASM |
 | 6.3 | **Resident solver state in WASM memory** | ✅ Complete | Standard source planes/LUTs remain resident per request, and ECM/MCM now upload per-offset cell error tables once so both binary and MCM kernels read resident cell buffers by `cellIndex` instead of per-cell JS copies |
-| 6.4 | **Progress/result bridge + fallback reduction** | ⚠️ Partial | ECM pool construction/finalization is parity-clean on the WASM-first path, and MCM triple ranking plus per-cell candidate-pool construction are now on the WASM-first path. The remaining work is compact mode buffers and fallback reduction |
+| 6.4 | **Progress/result bridge + fallback reduction** | ⚠️ Partial | ECM pool construction/finalization is parity-clean on the WASM-first path, MCM triple ranking plus per-cell candidate-pool construction are on the WASM-first path, and mode workers now return compact typed result buffers plus structured progress checkpoints. The remaining work is fallback reduction |
 
 ### Measured Standard Benchmark
 

@@ -468,9 +468,9 @@ type CompactBinaryCandidatePoolsByBackground = {
 };
 
 interface PetsciiResult {
-  screencodes: number[];
-  colors: number[];
-  bgIndices: number[];
+  screencodes: ArrayLike<number>;
+  colors: ArrayLike<number>;
+  bgIndices: ArrayLike<number>;
   totalError: number;
 }
 
@@ -482,8 +482,20 @@ interface SolvedModeCandidate {
   offset: AlignmentOffset;
 }
 
+export interface CompactModeWorkerConversion {
+  screencodes: Uint8Array;
+  colors: Uint8Array;
+  backgroundColor: number;
+  ecmBgColors: Uint8Array;
+  bgIndices: Uint8Array;
+  mcmSharedColors: Uint8Array;
+  charset: ConverterCharset;
+  mode: 'ecm' | 'mcm';
+  accelerationBackend?: ConverterAccelerationPath;
+}
+
 export interface WorkerSolvedModeCandidate {
-  conversion: ConversionResult;
+  conversion: CompactModeWorkerConversion;
   error: number;
   offset: AlignmentOffset;
 }
@@ -1808,7 +1820,7 @@ function logArrayDiff(label: string, reference: ArrayLike<number>, candidate: Ar
   });
 }
 
-function arraysEqual(a: number[], b: number[]): boolean {
+function arraysEqual(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
     if (a[i] !== b[i]) return false;
@@ -3205,9 +3217,9 @@ async function solveScreen(
     }
     const finalized = wasmKernel.finalizeSelection(_ecmSelectedIndicesU8);
     return {
-      screencodes: Array.from(finalized.screencodes),
-      colors: Array.from(finalized.colors),
-      bgIndices: Array.from(finalized.bgIndices),
+      screencodes: Uint8Array.from(finalized.screencodes),
+      colors: Uint8Array.from(finalized.colors),
+      bgIndices: Uint8Array.from(finalized.bgIndices),
       totalError: finalized.totalError,
       selected,
     };
@@ -4196,9 +4208,9 @@ async function solveCompactBinaryScreenWithKernel(
   const finalized = wasmKernel.finalizeSelection(_ecmSelectedIndicesU8);
 
   return {
-    screencodes: Array.from(finalized.screencodes),
-    colors: Array.from(finalized.colors),
-    bgIndices: Array.from(finalized.bgIndices),
+    screencodes: Uint8Array.from(finalized.screencodes),
+    colors: Uint8Array.from(finalized.colors),
+    bgIndices: Uint8Array.from(finalized.bgIndices),
     totalError: finalized.totalError,
     selected,
   };
@@ -4800,7 +4812,7 @@ export async function solveModeOffsetWorker(
   mcmScoringKernel: McmCandidateScoringKernel | undefined,
   onProgress: ProgressCallback,
   shouldCancel?: () => boolean
-): Promise<WorkerSolvedModeCandidate | undefined> {
+): Promise<SolvedModeCandidate | undefined> {
   throwIfCancelled(shouldCancel);
   const analysis = analyzeAlignedSourceImage(
     preprocessed,
@@ -4849,13 +4861,7 @@ export async function solveModeOffsetWorker(
     }
   }
 
-  return best
-    ? {
-        conversion: best.conversion,
-        error: best.error,
-        offset,
-      }
-    : undefined;
+  return best ? { ...best, offset } : undefined;
 }
 
 // --- Preview Rendering ---
@@ -5258,15 +5264,26 @@ function toSolvedModeCandidateFromWorker(
   palette: PaletteColor[],
   contexts: Record<ConverterCharset, CharsetConversionContext>
 ): SolvedModeCandidate {
+  const conversion: ConversionResult = {
+    screencodes: Array.from(candidate.conversion.screencodes),
+    colors: Array.from(candidate.conversion.colors),
+    backgroundColor: candidate.conversion.backgroundColor,
+    ecmBgColors: Array.from(candidate.conversion.ecmBgColors),
+    bgIndices: Array.from(candidate.conversion.bgIndices),
+    mcmSharedColors: Array.from(candidate.conversion.mcmSharedColors),
+    charset: candidate.conversion.charset,
+    mode: candidate.conversion.mode,
+    accelerationBackend: candidate.conversion.accelerationBackend,
+  };
   return finalizeSolvedModeCandidate(
     {
       result: {
-        screencodes: candidate.conversion.screencodes,
-        colors: candidate.conversion.colors,
-        bgIndices: candidate.conversion.bgIndices,
+        screencodes: conversion.screencodes,
+        colors: conversion.colors,
+        bgIndices: conversion.bgIndices,
         totalError: candidate.error,
       },
-      conversion: candidate.conversion,
+      conversion,
       error: candidate.error,
       offset: candidate.offset,
     },
@@ -5287,7 +5304,7 @@ async function solveModeAcrossOffsetsSequential(
   shouldCancel?: () => boolean
 ): Promise<SolvedModeCandidate | undefined> {
   const offsets = buildStandardAlignmentOffsets();
-  let best: WorkerSolvedModeCandidate | undefined;
+  let best: SolvedModeCandidate | undefined;
   const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
   onModeBackend?.(mode, 'js');
   onProgress('Alignment', `${mode.toUpperCase()} 0 of ${offsets.length}`, 0);
@@ -5329,7 +5346,7 @@ async function solveModeAcrossOffsetsSequential(
     elapsedSeconds: Number((elapsedMs / 1000).toFixed(2)),
   });
 
-  return best ? toSolvedModeCandidateFromWorker(best, palette, contexts) : undefined;
+  return best ? finalizeSolvedModeCandidate(best, palette, contexts) : undefined;
 }
 
 async function solveModeAcrossOffsets(
