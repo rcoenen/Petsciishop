@@ -9,6 +9,7 @@ import {
   solveStandardOffset,
 } from './imageConverterStandardCore';
 import type { StandardSolvedModeCandidate } from './imageConverterStandardCore';
+import type { StandardCandidateScoringKernel } from './imageConverterBinaryWasm';
 import {
   disposeStandardConverterWorkers,
   runStandardConversionInWorkers,
@@ -84,6 +85,21 @@ const MCM_HIRES_COLOR_PENALTY_WEIGHT = 0;
 const MCM_MULTICOLOR_USAGE_BONUS_WEIGHT = 0;
 const ENABLE_EXPERIMENTAL_HAMMING_FAST_PATH = false;
 const ENABLE_MCM_CELL_STATE_REUSE = true;
+
+// --- Reusable WASM solve buffers (shared by ECM/MCM solveScreen) ---
+const _ecmSolveCounts = new Uint8Array(CELL_COUNT);
+const _ecmSolveChars = new Uint8Array(CELL_COUNT * 16);
+const _ecmSolveFgs = new Uint8Array(CELL_COUNT * 16);
+const _ecmSolveBaseErrors = new Float64Array(CELL_COUNT * 16);
+const _ecmSolveBrightnessResiduals = new Float64Array(CELL_COUNT * 16);
+const _ecmSolveRepeatH = new Float64Array(CELL_COUNT * 16);
+const _ecmSolveRepeatV = new Float64Array(CELL_COUNT * 16);
+const _ecmSolveCoherenceColorMasks = new Uint16Array(CELL_COUNT * 16);
+const _ecmSolveGlyphDirections = new Uint8Array(CELL_COUNT * 16);
+const _ecmSolveEdgeLeft = new Uint8Array(CELL_COUNT * 16 * 8);
+const _ecmSolveEdgeRight = new Uint8Array(CELL_COUNT * 16 * 8);
+const _ecmSolveEdgeTop = new Uint8Array(CELL_COUNT * 16 * 8);
+const _ecmSolveEdgeBottom = new Uint8Array(CELL_COUNT * 16 * 8);
 
 // --- Color Science ---
 
@@ -2489,55 +2505,150 @@ function runEdgeContinuityPass(
   }
 }
 
+function trySolveScreenWithKernel(
+  candidatePools: ScreenCandidate[][],
+  analysis: SourceAnalysis,
+  wasmKernel?: StandardCandidateScoringKernel
+): { selectedIndices: Int32Array; selected: ScreenCandidate[]; refinementInKernel: boolean } | null {
+  if (!wasmKernel?.solveSelectionWithNeighborPasses) {
+    return null;
+  }
+
+  for (let cellIndex = 0; cellIndex < CELL_COUNT; cellIndex++) {
+    const pool = candidatePools[cellIndex];
+    const count = Math.min(pool.length, 16);
+    _ecmSolveCounts[cellIndex] = count;
+
+    for (let candidateIndex = 0; candidateIndex < count; candidateIndex++) {
+      const candidate = pool[candidateIndex];
+      const flatIndex = cellIndex * 16 + candidateIndex;
+      const edgeBase = flatIndex * 8;
+      _ecmSolveChars[flatIndex] = candidate.char;
+      _ecmSolveFgs[flatIndex] = candidate.fg;
+      _ecmSolveBaseErrors[flatIndex] = candidate.baseError;
+      _ecmSolveBrightnessResiduals[flatIndex] = candidate.brightnessResidual;
+      _ecmSolveRepeatH[flatIndex] = candidate.repeatH;
+      _ecmSolveRepeatV[flatIndex] = candidate.repeatV;
+      _ecmSolveCoherenceColorMasks[flatIndex] = candidate.coherenceColorMask;
+      _ecmSolveGlyphDirections[flatIndex] = candidate.glyphDirection;
+      _ecmSolveEdgeLeft.set(candidate.edgeLeft, edgeBase);
+      _ecmSolveEdgeRight.set(candidate.edgeRight, edgeBase);
+      _ecmSolveEdgeTop.set(candidate.edgeTop, edgeBase);
+      _ecmSolveEdgeBottom.set(candidate.edgeBottom, edgeBase);
+    }
+  }
+
+  const wasmSelectedIndices = wasmKernel.solveSelectionWithNeighborPasses(
+    _ecmSolveCounts,
+    _ecmSolveChars,
+    _ecmSolveFgs,
+    _ecmSolveBaseErrors,
+    _ecmSolveBrightnessResiduals,
+    _ecmSolveRepeatH,
+    _ecmSolveRepeatV,
+    _ecmSolveEdgeLeft,
+    _ecmSolveEdgeRight,
+    _ecmSolveEdgeTop,
+    _ecmSolveEdgeBottom,
+    analysis.hBoundaryDiffs,
+    analysis.vBoundaryDiffs,
+    SCREEN_SOLVE_PASSES
+  );
+  const refinedSelectedIndices = wasmKernel.refineSelectionWithPostPasses
+    ? wasmKernel.refineSelectionWithPostPasses(
+        wasmSelectedIndices,
+        _ecmSolveCoherenceColorMasks,
+        _ecmSolveGlyphDirections,
+        analysis.detailScores,
+        analysis.gradientDirections,
+        COLOR_COHERENCE_PASSES,
+        EDGE_CONTINUITY_PASSES
+      )
+    : wasmSelectedIndices;
+
+  const selectedIndices = new Int32Array(CELL_COUNT);
+  const selected = new Array<ScreenCandidate>(CELL_COUNT);
+  for (let cellIndex = 0; cellIndex < CELL_COUNT; cellIndex++) {
+    const pool = candidatePools[cellIndex];
+    const selectedIndex = Math.min(pool.length - 1, refinedSelectedIndices[cellIndex] ?? 0);
+    selectedIndices[cellIndex] = selectedIndex;
+    selected[cellIndex] = pool[selectedIndex];
+  }
+
+  return {
+    selectedIndices,
+    selected,
+    refinementInKernel: Boolean(wasmKernel.refineSelectionWithPostPasses),
+  };
+}
+
 async function solveScreen(
   candidatePools: ScreenCandidate[][],
   analysis: SourceAnalysis,
   metrics: PaletteMetricData,
-  shouldCancel?: () => boolean
+  shouldCancel?: () => boolean,
+  wasmKernel?: StandardCandidateScoringKernel
 ): Promise<PetsciiResult & { selected: ScreenCandidate[] }> {
-  const seededSelection = seedSelectionWithBrightnessDebt(candidatePools);
-  const selectedIndices = seededSelection.selectedIndices;
-  const selected = seededSelection.selected;
+  // Try WASM-accelerated solve+refine first
+  const wasmResult = trySolveScreenWithKernel(candidatePools, analysis, wasmKernel);
 
-  for (let pass = 0; pass < SCREEN_SOLVE_PASSES; pass++) {
-    let changed = false;
-    const start = pass % 2 === 0 ? 0 : CELL_COUNT - 1;
-    const end = pass % 2 === 0 ? CELL_COUNT : -1;
-    const step = pass % 2 === 0 ? 1 : -1;
-    let visitCount = 0;
+  let selectedIndices: Int32Array;
+  let selected: ScreenCandidate[];
+  let refinementDone = false;
 
-    for (let cellIndex = start; cellIndex !== end; cellIndex += step) {
-      const pool = candidatePools[cellIndex];
-      let bestIdx = selectedIndices[cellIndex];
-      let bestCost = Infinity;
+  if (wasmResult) {
+    selectedIndices = wasmResult.selectedIndices;
+    selected = wasmResult.selected;
+    refinementDone = wasmResult.refinementInKernel;
+  } else {
+    // JS fallback: seed + iterative neighbor solve
+    const seededSelection = seedSelectionWithBrightnessDebt(candidatePools);
+    selectedIndices = seededSelection.selectedIndices;
+    selected = seededSelection.selected;
 
-      for (let candidateIndex = 0; candidateIndex < pool.length; candidateIndex++) {
-        const candidate = pool[candidateIndex];
-        const cost = computeCellCost(cellIndex, candidate, selected, metrics, analysis);
+    for (let pass = 0; pass < SCREEN_SOLVE_PASSES; pass++) {
+      let changed = false;
+      const start = pass % 2 === 0 ? 0 : CELL_COUNT - 1;
+      const end = pass % 2 === 0 ? CELL_COUNT : -1;
+      const step = pass % 2 === 0 ? 1 : -1;
+      let visitCount = 0;
 
-        if (cost < bestCost) {
-          bestCost = cost;
-          bestIdx = candidateIndex;
+      for (let cellIndex = start; cellIndex !== end; cellIndex += step) {
+        const pool = candidatePools[cellIndex];
+        let bestIdx = selectedIndices[cellIndex];
+        let bestCost = Infinity;
+
+        for (let candidateIndex = 0; candidateIndex < pool.length; candidateIndex++) {
+          const candidate = pool[candidateIndex];
+          const cost = computeCellCost(cellIndex, candidate, selected, metrics, analysis);
+
+          if (cost < bestCost) {
+            bestCost = cost;
+            bestIdx = candidateIndex;
+          }
+        }
+
+        if (bestIdx !== selectedIndices[cellIndex]) {
+          selectedIndices[cellIndex] = bestIdx;
+          selected[cellIndex] = pool[bestIdx];
+          changed = true;
+        }
+
+        visitCount++;
+        if ((visitCount & 127) === 0) {
+          await yieldToUI(shouldCancel);
         }
       }
-
-      if (bestIdx !== selectedIndices[cellIndex]) {
-        selectedIndices[cellIndex] = bestIdx;
-        selected[cellIndex] = pool[bestIdx];
-        changed = true;
-      }
-
-      visitCount++;
-      if ((visitCount & 127) === 0) {
-        await yieldToUI(shouldCancel);
-      }
+      if (!changed) break;
+      await yieldToUI(shouldCancel);
     }
-    if (!changed) break;
-    await yieldToUI(shouldCancel);
   }
 
-  runColorCoherencePass(candidatePools, selectedIndices, selected, analysis, metrics);
-  runEdgeContinuityPass(candidatePools, selectedIndices, selected, analysis, metrics);
+  // JS refinement passes (skipped if WASM already handled them)
+  if (!refinementDone) {
+    runColorCoherencePass(candidatePools, selectedIndices, selected, analysis, metrics);
+    runEdgeContinuityPass(candidatePools, selectedIndices, selected, analysis, metrics);
+  }
 
   const screencodes = new Array<number>(CELL_COUNT);
   const colors = new Array<number>(CELL_COUNT);
@@ -3104,7 +3215,8 @@ async function runEcmRegisterResolvePass(
   candidatePoolsByBackground: ScreenCandidate[][][],
   orderedBgs: number[],
   solved: PetsciiResult & { selected: ScreenCandidate[] },
-  shouldCancel?: () => boolean
+  shouldCancel?: () => boolean,
+  wasmKernel?: StandardCandidateScoringKernel
 ): Promise<{ orderedBgs: number[]; solved: PetsciiResult & { selected: ScreenCandidate[] } }> {
   let bestOrderedBgs = orderedBgs;
   let bestSolved = solved;
@@ -3129,7 +3241,7 @@ async function runEcmRegisterResolvePass(
       refinedSet,
       ECM_POOL_SIZE
     );
-    const refinedSolved = await solveScreen(candidatePools, analysis, metrics, shouldCancel);
+    const refinedSolved = await solveScreen(candidatePools, analysis, metrics, shouldCancel, wasmKernel);
     const refinedOrderedBgs = chooseOrderedEcmBackgrounds(refinedSet, refinedSolved.selected, settings.manualBgColor);
 
     if (refinedSolved.totalError >= bestSolved.totalError) {
@@ -3155,6 +3267,10 @@ async function solveEcmForCombo(
   onProgress: ProgressCallback,
   shouldCancel?: () => boolean
 ): Promise<SolvedModeCandidate> {
+  // The binary scoring kernel is a BinaryWasmKernel at runtime which also
+  // implements StandardCandidateScoringKernel (solve/refine/finalize methods).
+  // Duck-type check happens inside trySolveScreenWithKernel.
+  const ecmWasmKernel = scoringKernel as unknown as StandardCandidateScoringKernel | undefined;
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const backgroundSets = buildEcmBackgroundSets(settings.manualBgColor);
   const allBackgrounds = buildBackgroundColorList();
@@ -3208,7 +3324,7 @@ async function solveEcmForCombo(
     );
     poolTime += (typeof performance !== 'undefined' ? performance.now() : Date.now()) - tMerge0;
     const tSolve0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const solved = await solveScreen(candidatePools, analysis, metrics, shouldCancel);
+    const solved = await solveScreen(candidatePools, analysis, metrics, shouldCancel, ecmWasmKernel);
     solveTime += (typeof performance !== 'undefined' ? performance.now() : Date.now()) - tSolve0;
     const orderedBgs = chooseOrderedEcmBackgrounds(set, solved.selected, settings.manualBgColor);
     const bgIndices = buildEcmBgIndices(orderedBgs, solved.selected);
@@ -3249,7 +3365,8 @@ async function solveEcmForCombo(
       candidatePoolsByBackground,
       bestOrderedBgs,
       bestSolved,
-      shouldCancel
+      shouldCancel,
+      ecmWasmKernel
     );
     if (refined.solved.totalError < best.error) {
       const bgIndices = buildEcmBgIndices(refined.orderedBgs, refined.solved.selected);

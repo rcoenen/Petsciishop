@@ -85,7 +85,7 @@ The capstone: move the full conversion engine into WASM while keeping JavaScript
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
 | 6.1 | **Standard full solver core in WASM** | ✅ Complete | Resident state, host API, coarse background ranking, candidate pools, iterative solve passes, refinement/post-passes, finalization, and wildcard admission now execute in WASM for Standard |
-| 6.2 | **ECM/MCM full solver cores in WASM** | ❌ Missing | ECM register solving, MCM triple solving, legal hires-within-MCM behavior, and final cell solves should run in WASM |
+| 6.2 | **ECM/MCM full solver cores in WASM** | ⚠️ Partial | ECM screen solve + refinement now runs in WASM via shared kernel entrypoints; MCM triple solving, legal hires-within-MCM behavior still JS |
 | 6.3 | **Resident solver state in WASM memory** | ⚠️ Partial | Standard source planes, LUT data, candidate buffers, and screen buffers are resident. Equivalent ECM/MCM residency still missing |
 | 6.4 | **Progress/result bridge + fallback reduction** | ⚠️ Partial | Standard progress/result plumbing is bridged through the worker/kernel boundary, but the JS fallback still remains for safety and ECM/MCM solver logic still lives outside the WASM-first path |
 
@@ -107,6 +107,20 @@ Weighted total:
 - WASM only: `32707.4ms`
 - Net speedup: **82.10% faster** (`5.59x`)
 
+### Measured ECM Benchmark
+
+ECM per-combo stage breakdown (single `solveEcmForCombo` call, averaged from six-fixture set):
+
+| Stage | JS only | WASM | Faster |
+|-------|---------|------|--------|
+| Coarse ranking | `~137ms` | `~133ms` | similar (uses `computeSetErrs` WASM in both) |
+| Pool construction | `~1425ms` | `~1285ms` | ~10% (inner `computeSetErrs` WASM, loop JS) |
+| Screen solve + refinement | `~3711ms` | `~527ms` | **85.8%** (`7.0x`) |
+| **Per-combo total** | `~5355ms` | `~2052ms` | **61.7%** (`2.6x`) |
+
+The solve phase (neighbor passes + color coherence + edge continuity) now runs entirely in WASM.
+Pool construction is the remaining per-combo bottleneck; its inner scoring uses WASM but the outer loop and ScreenCandidate construction remain in JS.
+
 ---
 
 ## Summary
@@ -117,7 +131,7 @@ Weighted total:
 | 2. Foundation | ✅ Complete | Detail scores, gradient directions, full glyph atlas |
 | 3. Perceptual Scoring | ✅ Complete | CSF, saliency-weighted palette solve, ECM re-solve, edge continuity, blend bonus, coverage extremity, wildcards |
 | 4. Output & Measurement | ✅ Complete | Full quality metrics suite + cellSSIM + test harness + per-cell metadata export + 4:3 preview |
-| 5. WASM Performance | ⚠️ ~60% | Groundwork is in place and Standard now shows a strong WASM win, but ECM/MCM still need parity/perf work and the hybrid path remains partly alive |
-| 6. WASM-First Migration | ⚠️ ~55% | Standard is now fully WASM-first; ECM/MCM migration and broader fallback reduction remain |
+| 5. WASM Performance | ⚠️ ~70% | Standard and ECM solve phases are WASM-accelerated; MCM still needs parity/perf work and pool construction loops remain partly JS |
+| 6. WASM-First Migration | ⚠️ ~65% | Standard is fully WASM-first; ECM solve+refinement now WASM; MCM migration and broader fallback reduction remain |
 
-**Current engine state: ~91% of spec implemented with all major perceptual features active. Standard is now fully WASM-first and benchmarks 82.10% faster than JS-only; remaining work is ECM/MCM quality polish plus the ECM/MCM-side WASM migration and fallback reduction.**
+**Current engine state: ~93% of spec implemented with all major perceptual features active. Standard is fully WASM-first (82.10% faster). ECM solve phase is now WASM-accelerated (85.8% faster per solve, 61.7% faster per combo). MCM migration and pool construction optimization remain.**

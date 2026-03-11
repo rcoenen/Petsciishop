@@ -176,7 +176,7 @@ All constants in `imageConverterStandardCore.ts`:
 
 ### Phase 6 — WASM-First Engine Migration
 12. **Standard full solver core in WASM** — **DONE**. Resident state, host API, coarse background ranking, candidate scoring/pool construction, iterative solve passes, refinement/post-passes, finalization, and wildcard admission are in WASM for Standard
-13. **ECM/MCM full solver cores in WASM** — Move register/triple ranking, legal hires-within-MCM solving, and final cell assignment into WASM
+13. **ECM/MCM full solver cores in WASM** — **ECM PARTIAL**. ECM screen solve + refinement (neighbor passes, color coherence, edge continuity) now run in WASM via shared kernel entrypoints. Per-combo solve phase is 85.8% faster (7.0x), per-combo total is 61.7% faster (2.6x). MCM solve still JS
 14. **Resident solver state in WASM memory** — **PARTIAL**. Standard source planes, pairDiff/LUT data, candidate buffers, and screen-state buffers are resident in WASM. Equivalent ECM/MCM residency remains
 15. **Progress/result bridge + JS fallback reduction** — **PARTIAL**. Standard progress/result bridging exists and the Standard tail now runs in WASM, but the JS fallback remains for safety and ECM/MCM solving still lives outside the WASM-first path
 
@@ -189,6 +189,10 @@ All constants in `imageConverterStandardCore.ts`:
    - `skeletor.png`: `28410.3ms -> 4640.1ms` = **83.67% faster**
    - `slayer_multi_color.png`: `32478.4ms -> 5720.9ms` = **82.39% faster**
    - weighted total: `182676.9ms -> 32707.4ms` = **82.10% faster** (`5.59x`)
+   - **ECM per-combo stage breakdown** (averaged from six-fixture set):
+     - Solve phase: `~3711ms -> ~527ms` = **85.8% faster** (`7.0x`)
+     - Pool construction: `~1425ms -> ~1285ms` = ~10% (inner scoring WASM, loop JS)
+     - Per-combo total: `~5355ms -> ~2052ms` = **61.7% faster** (`2.6x`)
 17. **Full parity coverage for WASM paths** — Expand parity validation from targeted cases into stable mode-wide coverage before Phase 6 migration
 
 ### Quality polish (ongoing)
