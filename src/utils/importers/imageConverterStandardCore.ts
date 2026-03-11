@@ -913,16 +913,9 @@ function buildBinaryCellScoringTables(
   cell: SourceCellData,
   context: CharsetConversionContext,
   metrics: PaletteMetricData,
-  settings: ConverterSettings
+  settings: ConverterSettings,
+  csfPenaltyByChar = buildBinaryCsfPenaltyByChar(cell, context, settings)
 ): BinaryCellScoringTables {
-  for (let ch = 0; ch < 256; ch++) {
-    _reusableBinaryCsfPenalty[ch] = computeCsfPenalty(
-      cell.detailScore,
-      context.glyphAtlas.spatialFrequency[ch],
-      settings.csfWeight
-    );
-  }
-
   for (let setCount = 0; setCount <= PIXELS_PER_CELL; setCount++) {
     for (let bg = 0; bg < 16; bg++) {
       for (let fg = 0; fg < 16; fg++) {
@@ -959,9 +952,24 @@ function buildBinaryCellScoringTables(
   return {
     pairAdjustment: _reusableBinaryPairAdjustment,
     brightnessResidual: _reusableBinaryBrightnessResidual,
-    csfPenaltyByChar: _reusableBinaryCsfPenalty,
+    csfPenaltyByChar,
     blendMatchBonus: _reusableBlendMatchBonus,
   };
+}
+
+function buildBinaryCsfPenaltyByChar(
+  cell: SourceCellData,
+  context: CharsetConversionContext,
+  settings: ConverterSettings
+): Float32Array {
+  for (let ch = 0; ch < 256; ch++) {
+    _reusableBinaryCsfPenalty[ch] = computeCsfPenalty(
+      cell.detailScore,
+      context.glyphAtlas.spatialFrequency[ch],
+      settings.csfWeight
+    );
+  }
+  return _reusableBinaryCsfPenalty;
 }
 
 function canUseBinaryHammingPath(
@@ -1105,7 +1113,7 @@ function buildBinaryCandidatePoolsForCell(
   const pools = backgrounds.map(() => [] as ScreenCandidate[]);
   const candidateScreencodes = getCandidateScreencodes(settings.includeTypographic);
   const foregroundsByBackground = getForegroundCandidatesByBackground(metrics);
-  const scoringTables = buildBinaryCellScoringTables(cell, context, metrics, settings);
+  const csfPenaltyByChar = buildBinaryCsfPenaltyByChar(cell, context, settings);
 
   // Scale edge penalty by cell detail — flat cells (detailScore ~0) get no edge penalty,
   // high-detail cells get full penalty. This prevents degrading flat-zone color matching.
@@ -1115,6 +1123,7 @@ function buildBinaryCandidatePoolsForCell(
   const eMaskHi = cell.edgeMaskHi;
 
   if (canUseBinaryHammingPath(settings, scoringKernel)) {
+    const scoringTables = buildBinaryCellScoringTables(cell, context, metrics, settings, csfPenaltyByChar);
     for (let bi = 0; bi < backgrounds.length; bi++) {
       const bg = backgrounds[bi];
       const pool = pools[bi];
@@ -1227,6 +1236,7 @@ function buildBinaryCandidatePoolsForCell(
         const fg = wasmPools.fgs[base + slot] ?? 0;
         const total = wasmPools.scores[base + slot] ?? Infinity;
         const mixIndex = binaryMixIndex(context.refSetCount[ch], bg, fg);
+        const brightnessResidual = cell.avgL - metrics.binaryMixL[mixIndex];
         pool.push(
           makeBinaryCandidate(
             context.ref[ch],
@@ -1235,7 +1245,7 @@ function buildBinaryCandidatePoolsForCell(
             fg,
             context.glyphAtlas.dominantDirection[ch] as CellGradientDirection,
             total,
-            scoringTables.brightnessResidual[mixIndex],
+            brightnessResidual,
             metrics.pairDiff,
             metrics.maxPairDiff
           )
@@ -1243,6 +1253,7 @@ function buildBinaryCandidatePoolsForCell(
       }
     }
   } else {
+    const scoringTables = buildBinaryCellScoringTables(cell, context, metrics, settings, csfPenaltyByChar);
     setErrMatrix = computeSetErrMatrix(cell, context, scoringKernel);
 
     for (let charIndex = 0; charIndex < candidateScreencodes.length; charIndex++) {
@@ -1333,18 +1344,36 @@ function buildBinaryCandidatePoolsForCell(
         const rowBase = ch * 16;
         const nSet = context.refSetCount[ch];
         const sfCh = context.glyphAtlas.spatialFrequency[ch];
-        const csfPenalty = sfCh <= 0.1 ? scoringTables.csfPenaltyByChar[ch] : 0;
+        const csfPenalty = sfCh <= 0.1 ? csfPenaltyByChar[ch] : 0;
         const csfBase = sfCh > 0.1 ? settings.csfWeight * sfCh * Math.max(0, 1 - cell.detailScore) : 0;
 
         const bgErr = cell.totalErrByColor[bg] - setErrMatrix[rowBase + bg];
         if (bgErr >= scoreThreshold) continue;
 
         const mixIndex = binaryMixIndex(nSet, bg, fg);
+        const brightnessResidual = cell.avgL - metrics.binaryMixL[mixIndex];
+        const hueBonus = computeHuePreservationBonus(
+          cell.avgA,
+          cell.avgB,
+          metrics.binaryMixA[mixIndex],
+          metrics.binaryMixB[mixIndex]
+        );
+        const dA = cell.avgA - metrics.binaryMixA[mixIndex];
+        const dB = cell.avgB - metrics.binaryMixB[mixIndex];
+        const blendError =
+          brightnessResidual * brightnessResidual +
+          dA * dA +
+          dB * dB;
+        const blendQuality = 1 / (1 + blendError * BLEND_QUALITY_SHARPNESS);
+        const pairAdjustment =
+          settings.lumMatchWeight * brightnessResidual * brightnessResidual -
+          hueBonus -
+          BLEND_MATCH_WEIGHT * blendQuality;
         let total =
           bgErr +
           setErrMatrix[rowBase + fg] +
           csfPenalty +
-          scoringTables.pairAdjustment[mixIndex];
+          pairAdjustment;
 
         if (hasEdges) {
           const [tLo, tHi] = packBinaryThresholdMap(cell.weightedPixelErrors, fg, bg);
@@ -1357,12 +1386,10 @@ function buildBinaryCandidatePoolsForCell(
         }
 
         if (sfCh > 0.1) {
-          const blendQuality = scoringTables.blendMatchBonus[mixIndex];
           total += csfBase * (1 - BLEND_CSF_RELIEF * blendQuality);
         }
 
         // Admission criteria: competitive score OR strong blend quality
-        const blendQuality = scoringTables.blendMatchBonus[mixIndex];
         const isCompetitive = total <= scoreThreshold;
         const hasColorAdvantage = blendQuality >= WILDCARD_BLEND_QUALITY_MIN;
         if (!isCompetitive && !hasColorAdvantage) continue;
@@ -1377,7 +1404,7 @@ function buildBinaryCandidatePoolsForCell(
               fg,
               context.glyphAtlas.dominantDirection[ch] as CellGradientDirection,
               total,
-              scoringTables.brightnessResidual[mixIndex],
+              brightnessResidual,
               metrics.pairDiff,
               metrics.maxPairDiff
             ),
