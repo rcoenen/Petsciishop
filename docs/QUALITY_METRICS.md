@@ -22,7 +22,7 @@ Root mean square of the OkLab a/b channel distances: `sqrt(mean(da² + db²))`. 
 
 - **Lower = better**
 - Typical range: 0.02–0.12
-- This is the metric most sensitive to the gray bias problem identified in TRUE_COLOR.md
+- This is the metric most sensitive to the gray-bias problem seen during engine tuning
 - Directly reflects `CHROMA_ERROR_WEIGHT` tuning in the converter
 
 ### Mean Delta E (`meanDeltaE`)

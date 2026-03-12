@@ -1,10 +1,12 @@
 # TRUSKI3000 Engine
 
-**The state-of-the-art bitmap-to-PETSCII converter.**
+TRUSKI3000 grew out of a simple obsession: how good can a PETSCII image converter actually get if you keep pushing it?
 
-TRUSKI3000 converts any source image into authentic Commodore 64 PETSCII graphics across all three VIC-II character modes — Standard, ECM (Extended Color Mode), and MCM (Multicolor Mode). The goal is not mathematical correctness in the abstract — it's the most perceptually accurate representation of any source image within the real-world constraints of VIC-II hardware. That means factoring in the chip's actual color output (measured, not nominal), the uneven perceptual spacing of the C64's 16-color palette, how human vision processes contrast and color at different spatial frequencies, where the eye actually looks in an image, and the hard memory and mode limitations the hardware enforces per cell. The output is correct screen RAM and color RAM, ready to load on real iron or emulator.
+The engine is an attempt to build the best PETSCII generator we can make for the real Commodore 64 constraint space. That means respecting the machine as it actually works: a fixed 40x25 character grid, a 16-color palette with uneven perceptual spacing, strict VIC-II mode rules, shared global colors, and constant tradeoffs between structure, contrast, texture, and color identity. The output is real screen RAM and color RAM, ready to load on hardware or in an emulator.
 
-Under the hood, TRUSKI3000 works the way human vision works. All color matching happens in OKLAB perceptual color space, glyph selection is weighted by a contrast sensitivity function that accounts for how the eye reads detail versus texture at different spatial frequencies, and a saliency map ensures the engine spends its error budget where it matters most — faces, edges, focal points — not flat backgrounds. The whole thing is framed as a constrained combinatorial optimization problem, with the long-term performance target being a WASM-first core fast enough to make expensive global refinement passes tractable on modern hardware.
+Getting there takes more than one trick. TRUSKI3000 pulls together a lot of useful knowledge that usually lives in separate worlds: C64 graphics practice, PETSCII character behavior, perceptual color theory, luminance structure, saliency, glyph statistics, screen-level refinement, and brute-force search. All color matching happens in OKLAB perceptual color space, glyph scoring is weighted by contrast sensitivity and screen context, and the hot path now runs in a WASM-first core so deeper search and refinement stay practical in the browser.
+
+The result is an engine that treats bitmap-to-PETSCII conversion as a serious optimization problem with artistic consequences. The goal is simple: keep closing the gap between what the medium allows and what the converter can actually discover.
 
 ### Pipeline at a Glance
 

@@ -13,6 +13,16 @@ Petsciishop is our attempt to take the best ideas from across the C64 community,
 
 **Try it now:** [https://rcoenen.github.io/Petsciishop/](https://rcoenen.github.io/Petsciishop/)
 
+## The Story of TruSkii3000
+
+TruSkii3000 grew out of a pretty direct obsession: how good can a PETSCII image converter actually get if you keep pushing it instead of stopping at "retro enough"?
+
+The engine is our attempt to build a world-class PETSCII generator. It works inside the real limits of the Commodore 64: a fixed character grid, a tiny palette, strict VIC-II mode rules, shared colors, and constant tradeoffs between shape, contrast, texture, and color identity. The whole point is to squeeze the strongest possible image through those limits without losing what makes PETSCII look and feel right.
+
+Over time, that turned TruSkii3000 into a meeting point between old machine constraints and modern image science. It pulls together C64 screen behavior, PETSCII character analysis, perceptual color theory, luminance structure, saliency, screen-wide refinement, and a lot of hard-nosed search. The current engine runs its hot path in a WASM-first core so the quality work is not trapped behind slow browser-side experimentation.
+
+If you want the deeper technical write-up, start with [TRUSKI3000 Engine](docs/TRUSKI3000_Engine.md).
+
 ## Features
 
 - **Runs in the browser** — no Electron, no server, just open the URL and start creating
