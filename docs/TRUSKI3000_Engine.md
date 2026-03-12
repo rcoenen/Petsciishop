@@ -8,6 +8,8 @@ Getting there takes more than one trick. TRUSKI3000 pulls together a lot of usef
 
 The result is an engine that treats bitmap-to-PETSCII conversion as a serious optimization problem with artistic consequences. The goal is simple: keep closing the gap between what the medium allows and what the converter can actually discover.
 
+For side-by-side `Original / STD / ECM / MCM` examples with recorded timings and quality metrics, see the live [TruSkii3000 Samples Gallery](https://rcoenen.github.io/Petsciishop/demo/truski3000-samples/).
+
 ### Pipeline at a Glance
 
 1. **Preprocessing** — Source image is converted to OKLAB color space and divided into 8×8 cell regions. Per-cell statistics are computed: mean luminance, variance, gradient direction, detail score (via Laplacian), and a perceptual saliency mask that tells the engine where the eye will look hardest.
