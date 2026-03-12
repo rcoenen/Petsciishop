@@ -554,6 +554,8 @@ function computeBestByBackgroundForBase(
   minContrastRatio: f64
 ): void {
   computeSetErrsFromBase(weightedPixelErrorBasePtr);
+  const detailSlack = 1.0 - detailScore;
+  const safeDetailSlack = detailSlack > 0.0 ? detailSlack : 0.0;
 
   for (let bg: i32 = 0; bg < COLOR_COUNT; bg++) {
     outputBestByBg[bg] = Infinity;
@@ -564,20 +566,21 @@ function computeBestByBackgroundForBase(
     const rowBase = ch << 4;
     const nSet = standardRefSetCount[ch];
     const sf = <f64>standardGlyphSpatialFrequency[ch];
-    const detailSlack = 1.0 - detailScore;
-    const csfPenalty = csfWeight > 0 ? csfWeight * sf * (detailSlack > 0.0 ? detailSlack : 0.0) : 0.0;
+    const csfPenalty = csfWeight > 0 ? csfWeight * sf * safeDetailSlack : 0.0;
     const covRatio = <f64>nSet / <f64>PIXEL_COUNT;
     const covCentered = 2.0 * covRatio - 1.0;
     const extremity = covCentered * covCentered;
 
     for (let bg: i32 = 0; bg < COLOR_COUNT; bg++) {
+      let best = outputBestByBg[bg];
       const bgErr = <f64>standardTotalErrByColor[bg] - <f64>outputSetErrs[rowBase + bg];
-      if (bgErr >= outputBestByBg[bg]) continue;
+      if (bgErr >= best) continue;
 
       const covPenalty = useCoveragePenalty
         ? COVERAGE_EXTREMITY_WEIGHT * Math.abs(avgL - standardPaletteL[bg]) * extremity
         : 0.0;
-      let best = outputBestByBg[bg];
+      const lowerBound = bgErr + csfPenalty + covPenalty - (useCoveragePenalty ? BLEND_MATCH_WEIGHT : 0.0);
+      if (lowerBound >= best) continue;
 
       for (let fg: i32 = 0; fg < fgLimit; fg++) {
         if (fg == bg) continue;
@@ -1340,6 +1343,9 @@ function computeCandidatePoolsForBase(
       ? (sf <= 0.1 ? csfPenaltyFull : 0.0)
       : csfPenaltyFull;
     const csfBase = useCoveragePenalty && sf > 0.1 ? csfPenaltyFull : 0.0;
+    const lowerBoundBonus =
+      (useCoveragePenalty ? BLEND_MATCH_WEIGHT : 0.0) +
+      (useCoveragePenalty && BLEND_CSF_RELIEF > 1.0 ? csfBase * (BLEND_CSF_RELIEF - 1.0) : 0.0);
 
     for (let bi: i32 = 0; bi < backgroundCount; bi++) {
       const bg = <i32>standardBackgrounds[bi];
@@ -1348,6 +1354,8 @@ function computeCandidatePoolsForBase(
       const worst = count >= clampedPoolSize ? standardPoolScores[poolBase + clampedPoolSize - 1] : Infinity;
       const bgErr = <f64>standardTotalErrByColor[bg] - <f64>outputSetErrs[rowBase + bg];
       if (bgErr >= worst) continue;
+      const lowerBound = bgErr + csfPenalty - lowerBoundBonus;
+      if (lowerBound >= worst) continue;
 
       for (let fg: i32 = 0; fg < fgLimit; fg++) {
         if (fg == bg) continue;
@@ -1424,6 +1432,9 @@ function computeCandidatePoolsForBase(
           const csfBase = sf > 0.1 && csfWeight > 0.0 ? csfWeight * sf * safeDetailSlack : 0.0;
           const bgErr = <f64>standardTotalErrByColor[bg] - <f64>outputSetErrs[rowBase + bg];
           if (bgErr >= scoreThreshold) continue;
+          const lowerBound = bgErr + csfPenalty - BLEND_MATCH_WEIGHT -
+            (BLEND_CSF_RELIEF > 1.0 ? csfBase * (BLEND_CSF_RELIEF - 1.0) : 0.0);
+          if (lowerBound >= scoreThreshold) continue;
 
           const mixIndex = ((nSet * COLOR_COUNT) + bg) * COLOR_COUNT + fg;
           const lumDiff = avgL - standardBinaryMixL[mixIndex];
