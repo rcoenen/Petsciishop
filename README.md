@@ -23,6 +23,8 @@ Over time, that turned TruSkii3000 into a meeting point between old machine cons
 
 If you want the deeper technical write-up, start with [TRUSKI3000 Engine](docs/TRUSKI3000_Engine.md).
 
+If you want to see it in action, browse the [TruSkii3000 Samples](https://rcoenen.github.io/Petsciishop/demo/truski3000-samples/) page for side-by-side `Original / STD / ECM / MCM` outputs with recorded timings.
+
 ## Features
 
 - **Runs in the browser** — no Electron, no server, just open the URL and start creating
