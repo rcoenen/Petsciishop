@@ -216,6 +216,9 @@ function buildPreviewSignature(
     saliencyAlpha: settings.saliencyAlpha,
     lumMatchWeight: settings.lumMatchWeight,
     csfWeight: settings.csfWeight,
+    mcmHuePreservationWeight: settings.mcmHuePreservationWeight,
+    mcmHiresColorPenaltyWeight: settings.mcmHiresColorPenaltyWeight,
+    mcmMulticolorUsageBonusWeight: settings.mcmMulticolorUsageBonusWeight,
     includeTypographic: settings.includeTypographic,
     accelerationMode: settings.accelerationMode,
     paletteId: settings.paletteId,
@@ -738,6 +741,9 @@ export default function ImageConverterModal() {
           saliencyAlpha: preset.saliencyAlpha,
           lumMatchWeight: preset.lumMatchWeight,
           csfWeight: preset.csfWeight,
+          mcmHuePreservationWeight: preset.mcmHuePreservationWeight,
+          mcmHiresColorPenaltyWeight: preset.mcmHiresColorPenaltyWeight,
+          mcmMulticolorUsageBonusWeight: preset.mcmMulticolorUsageBonusWeight,
           includeTypographic: preset.includeTypographic,
           paletteId: preset.paletteId,
           manualBgColor: preset.manualBgColor,
@@ -769,6 +775,9 @@ export default function ImageConverterModal() {
     Math.abs(p.saliencyAlpha - settings.saliencyAlpha) < 0.01 &&
     Math.abs(p.lumMatchWeight - settings.lumMatchWeight) < 0.01 &&
     Math.abs(p.csfWeight - settings.csfWeight) < 0.01 &&
+    Math.abs(p.mcmHuePreservationWeight - settings.mcmHuePreservationWeight) < 0.01 &&
+    Math.abs(p.mcmHiresColorPenaltyWeight - settings.mcmHiresColorPenaltyWeight) < 0.01 &&
+    Math.abs(p.mcmMulticolorUsageBonusWeight - settings.mcmMulticolorUsageBonusWeight) < 0.01 &&
     p.includeTypographic === settings.includeTypographic &&
     p.paletteId === settings.paletteId &&
     p.manualBgColor === settings.manualBgColor

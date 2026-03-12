@@ -50,6 +50,9 @@ type HarnessSummarySettings = {
   saliencyAlpha: number;
   lumMatchWeight: number;
   csfWeight: number;
+  mcmHuePreservationWeight: number;
+  mcmHiresColorPenaltyWeight: number;
+  mcmMulticolorUsageBonusWeight: number;
   includeTypographic: boolean;
   accelerationMode: 'js' | 'wasm';
   paletteId: string;
@@ -157,6 +160,9 @@ function summarizeSettings(settings: ConverterSettings): HarnessSummarySettings 
     saliencyAlpha: settings.saliencyAlpha,
     lumMatchWeight: settings.lumMatchWeight,
     csfWeight: settings.csfWeight,
+    mcmHuePreservationWeight: settings.mcmHuePreservationWeight,
+    mcmHiresColorPenaltyWeight: settings.mcmHiresColorPenaltyWeight,
+    mcmMulticolorUsageBonusWeight: settings.mcmMulticolorUsageBonusWeight,
     includeTypographic: settings.includeTypographic,
     accelerationMode: settings.accelerationMode,
     paletteId: settings.paletteId,

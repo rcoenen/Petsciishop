@@ -37,6 +37,7 @@ const MAX_MCM_SAMPLE_COUNT: i32 = 64;
 const MAX_MCM_TRIPLE_COUNT: i32 = COLOR_COUNT * (COLOR_COUNT - 1) * (COLOR_COUNT - 2);
 const MAX_MCM_FINALIST_COUNT: i32 = 16;
 const MAX_MCM_POOL_SIZE: i32 = 16;
+const MCM_CANONICAL_UNUSED_COLOR_RAM: i32 = 8;
 
 // Per-pixel error table used by the MCM hires path:
 // [64 pixels][16 palette colors].
@@ -78,6 +79,8 @@ const poolTopVariants = new Uint8Array(MAX_MCM_POOL_SIZE);
 const poolTopScores = new Float64Array(MAX_MCM_POOL_SIZE);
 const rankSampleCellIndices = new Int32Array(MAX_MCM_SAMPLE_COUNT);
 const rankSampleAvgL = new Float64Array(MAX_MCM_SAMPLE_COUNT);
+const rankSampleAvgA = new Float64Array(MAX_MCM_SAMPLE_COUNT);
+const rankSampleAvgB = new Float64Array(MAX_MCM_SAMPLE_COUNT);
 const rankSampleDetailScores = new Float64Array(MAX_MCM_SAMPLE_COUNT);
 const rankSampleSaliencyWeights = new Float64Array(MAX_MCM_SAMPLE_COUNT);
 const rankSampleTotalErrByColor = new Float32Array(MAX_MCM_SAMPLE_COUNT * COLOR_COUNT);
@@ -86,7 +89,11 @@ const rankRefSetCount = new Int32Array(CHAR_COUNT);
 const rankGlyphSpatialFrequency = new Float32Array(CHAR_COUNT);
 const rankRefMcmBpCounts = new Uint8Array(CHAR_COUNT * 4);
 const rankBinaryMixL = new Float64Array(BINARY_MIX_COUNT);
+const rankBinaryMixA = new Float64Array(BINARY_MIX_COUNT);
+const rankBinaryMixB = new Float64Array(BINARY_MIX_COUNT);
 const rankPaletteL = new Float64Array(COLOR_COUNT);
+const rankPaletteA = new Float64Array(COLOR_COUNT);
+const rankPaletteB = new Float64Array(COLOR_COUNT);
 const rankContrastMask = new Uint8Array(COLOR_COUNT * 8);
 const rankTripleScores = new Float64Array(MAX_MCM_TRIPLE_COUNT);
 const rankTopBgs = new Uint8Array(MAX_MCM_FINALIST_COUNT);
@@ -125,6 +132,8 @@ export function getPoolTopVariantsPtr(): usize { return poolTopVariants.dataStar
 export function getPoolTopScoresPtr(): usize { return poolTopScores.dataStart; }
 export function getRankSampleCellIndicesPtr(): usize { return rankSampleCellIndices.dataStart; }
 export function getRankSampleAvgLPtr(): usize { return rankSampleAvgL.dataStart; }
+export function getRankSampleAvgAPtr(): usize { return rankSampleAvgA.dataStart; }
+export function getRankSampleAvgBPtr(): usize { return rankSampleAvgB.dataStart; }
 export function getRankSampleDetailScoresPtr(): usize { return rankSampleDetailScores.dataStart; }
 export function getRankSampleSaliencyWeightsPtr(): usize { return rankSampleSaliencyWeights.dataStart; }
 export function getRankSampleTotalErrByColorPtr(): usize { return rankSampleTotalErrByColor.dataStart; }
@@ -133,7 +142,11 @@ export function getRankRefSetCountPtr(): usize { return rankRefSetCount.dataStar
 export function getRankGlyphSpatialFrequencyPtr(): usize { return rankGlyphSpatialFrequency.dataStart; }
 export function getRankRefMcmBpCountsPtr(): usize { return rankRefMcmBpCounts.dataStart; }
 export function getRankBinaryMixLPtr(): usize { return rankBinaryMixL.dataStart; }
+export function getRankBinaryMixAPtr(): usize { return rankBinaryMixA.dataStart; }
+export function getRankBinaryMixBPtr(): usize { return rankBinaryMixB.dataStart; }
 export function getRankPaletteLPtr(): usize { return rankPaletteL.dataStart; }
+export function getRankPaletteAPtr(): usize { return rankPaletteA.dataStart; }
+export function getRankPaletteBPtr(): usize { return rankPaletteB.dataStart; }
 export function getRankContrastMaskPtr(): usize { return rankContrastMask.dataStart; }
 export function getRankTopBgsPtr(): usize { return rankTopBgs.dataStart; }
 export function getRankTopMc1sPtr(): usize { return rankTopMc1s.dataStart; }
@@ -230,6 +243,63 @@ function computeCsfPenalty(detailScore: f64, glyphSpatialFrequency: f64, csfWeig
   return csfWeight * glyphSpatialFrequency * (detailSlack > 0.0 ? detailSlack : 0.0);
 }
 
+function computeHuePreservationBonus(
+  sourceA: f64,
+  sourceB: f64,
+  renderedA: f64,
+  renderedB: f64,
+  weight: f64
+): f64 {
+  if (weight <= 0.0) return 0.0;
+  const sourceChroma = Math.sqrt(sourceA * sourceA + sourceB * sourceB);
+  const renderedChroma = Math.sqrt(renderedA * renderedA + renderedB * renderedB);
+  if (sourceChroma < 0.015 || renderedChroma < 0.015) return 0.0;
+
+  const sourceHue = Math.atan2(sourceB, sourceA);
+  const renderedHue = Math.atan2(renderedB, renderedA);
+  let hueDiff = Math.abs(sourceHue - renderedHue);
+  if (hueDiff > Math.PI) hueDiff = 2.0 * Math.PI - hueDiff;
+
+  const similarity = 1.0 - (hueDiff / Math.PI);
+  const cappedChroma = sourceChroma < renderedChroma ? sourceChroma : renderedChroma;
+  return weight * cappedChroma * similarity;
+}
+
+function computeMcmColorDemand(detailScore: f64, avgA: f64, avgB: f64): f64 {
+  const chroma = Math.sqrt(avgA * avgA + avgB * avgB);
+  if (chroma < 0.015) return 0.0;
+  const chromaNeed = chroma < 0.14 ? chroma / 0.14 : 1.0;
+  const detailAllowance = 1.0 - (detailScore / 0.8);
+  return detailAllowance > 0.0 ? chromaNeed * detailAllowance : 0.0;
+}
+
+function computeMcmHiresColorPenalty(
+  detailScore: f64,
+  avgA: f64,
+  avgB: f64,
+  weight: f64
+): f64 {
+  if (weight <= 0.0) return 0.0;
+  return weight * computeMcmColorDemand(detailScore, avgA, avgB);
+}
+
+function computeMcmMulticolorUsageBonus(
+  count1: f64,
+  count2: f64,
+  count3: f64,
+  detailScore: f64,
+  avgA: f64,
+  avgB: f64,
+  weight: f64
+): f64 {
+  if (weight <= 0.0) return 0.0;
+  const colorDemand = computeMcmColorDemand(detailScore, avgA, avgB);
+  if (colorDemand <= 0.0) return 0.0;
+
+  const multicolorCoverage = (count1 + count2 + count3) / <f64>PAIR_COUNT;
+  return weight * colorDemand * multicolorCoverage;
+}
+
 function binaryMixIndex(setCount: i32, bg: i32, fg: i32): i32 {
   return ((setCount * COLOR_COUNT) + bg) * COLOR_COUNT + fg;
 }
@@ -309,15 +379,19 @@ function computeBestHiresCostByBackgroundForSample(
   sampleIndex: i32,
   candidateCount: i32,
   lumMatchWeight: f64,
-  csfWeight: f64
+  csfWeight: f64,
+  mcmHiresColorPenaltyWeight: f64
 ): void {
   for (let bg: i32 = 0; bg < COLOR_COUNT; bg++) {
     rankBestHiresCostByBg[bg] = Infinity;
   }
 
   const avgL = rankSampleAvgL[sampleIndex];
+  const avgA = rankSampleAvgA[sampleIndex];
+  const avgB = rankSampleAvgB[sampleIndex];
   const detailScore = rankSampleDetailScores[sampleIndex];
   const totalErrBase = sampleIndex * COLOR_COUNT;
+  const hiresPenalty = computeMcmHiresColorPenalty(detailScore, avgA, avgB, mcmHiresColorPenaltyWeight);
 
   for (let candidateIndex: i32 = 0; candidateIndex < candidateCount; candidateIndex++) {
     const ch = <i32>rankCandidateScreencodes[candidateIndex];
@@ -339,7 +413,8 @@ function computeBestHiresCostByBackgroundForSample(
           bgErr +
           <f64>outputSetErrs[hiresBase + fg] +
           csfPenalty +
-          lumMatchWeight * lumDiff * lumDiff;
+          lumMatchWeight * lumDiff * lumDiff +
+          hiresPenalty;
 
         if (total < rankBestHiresCostByBg[bg]) {
           rankBestHiresCostByBg[bg] = total;
@@ -364,6 +439,9 @@ export function rankModeTriples(
   finalistCount: i32,
   lumMatchWeight: f64,
   csfWeight: f64,
+  mcmHuePreservationWeight: f64,
+  mcmHiresColorPenaltyWeight: f64,
+  mcmMulticolorUsageBonusWeight: f64,
   manualBgColor: i32
 ): i32 {
   const clampedSampleCount = sampleCount > MAX_MCM_SAMPLE_COUNT ? MAX_MCM_SAMPLE_COUNT : sampleCount;
@@ -393,10 +471,13 @@ export function rankModeTriples(
       sampleIndex,
       clampedCandidateCount,
       lumMatchWeight,
-      csfWeight
+      csfWeight,
+      mcmHiresColorPenaltyWeight
     );
 
     const avgL = rankSampleAvgL[sampleIndex];
+    const avgA = rankSampleAvgA[sampleIndex];
+    const avgB = rankSampleAvgB[sampleIndex];
     const detailScore = rankSampleDetailScores[sampleIndex];
     const detailSlack = 1.0 - detailScore;
     const safeDetailSlack = detailSlack > 0.0 ? detailSlack : 0.0;
@@ -428,29 +509,70 @@ export function rankModeTriples(
             const count1 = <f64>rankRefMcmBpCounts[countsBase + 1];
             const count2 = <f64>rankRefMcmBpCounts[countsBase + 2];
             const count3 = <i32>rankRefMcmBpCounts[countsBase + 3];
+            const count3f = <f64>count3;
             const fixedL =
               count0 * rankPaletteL[bg] +
               count1 * rankPaletteL[mc1] +
               count2 * rankPaletteL[mc2];
+            const fixedA =
+              count0 * rankPaletteA[bg] +
+              count1 * rankPaletteA[mc1] +
+              count2 * rankPaletteA[mc2];
+            const fixedB =
+              count0 * rankPaletteB[bg] +
+              count1 * rankPaletteB[mc1] +
+              count2 * rankPaletteB[mc2];
+            const multicolorUsageBonus = computeMcmMulticolorUsageBonus(
+              count1,
+              count2,
+              count3f,
+              detailScore,
+              avgA,
+              avgB,
+              mcmMulticolorUsageBonusWeight
+            );
             const bp3Base = bpBase + 48;
 
             if (count3 == 0) {
               const lumDiff = avgL - (fixedL / <f64>PAIR_COUNT);
+              const renderedA = fixedA / <f64>PAIR_COUNT;
+              const renderedB = fixedB / <f64>PAIR_COUNT;
+              const hueBonus = computeHuePreservationBonus(
+                avgA,
+                avgB,
+                renderedA,
+                renderedB,
+                mcmHuePreservationWeight
+              );
               const total =
                 2.0 * fixedErr +
                 lumMatchWeight * lumDiff * lumDiff +
-                csfPenalty;
+                csfPenalty -
+                hueBonus -
+                multicolorUsageBonus;
               if (total < best) best = total;
               continue;
             }
 
             for (let fg: i32 = 0; fg < 8; fg++) {
               if (!rankHasContrast(fg, bg)) continue;
-              const lumDiff = avgL - ((fixedL + <f64>count3 * rankPaletteL[fg]) / <f64>PAIR_COUNT);
+              const renderedL = (fixedL + count3f * rankPaletteL[fg]) / <f64>PAIR_COUNT;
+              const renderedA = (fixedA + count3f * rankPaletteA[fg]) / <f64>PAIR_COUNT;
+              const renderedB = (fixedB + count3f * rankPaletteB[fg]) / <f64>PAIR_COUNT;
+              const lumDiff = avgL - renderedL;
+              const hueBonus = computeHuePreservationBonus(
+                avgA,
+                avgB,
+                renderedA,
+                renderedB,
+                mcmHuePreservationWeight
+              );
               const total =
                 2.0 * (fixedErr + <f64>outputBitPairErrs[bp3Base + fg]) +
                 lumMatchWeight * lumDiff * lumDiff +
-                csfPenalty;
+                csfPenalty -
+                hueBonus -
+                multicolorUsageBonus;
               if (total < best) best = total;
             }
           }
@@ -512,9 +634,14 @@ export function computeModeCandidatePool(
   mc1: i32,
   mc2: i32,
   avgL: f64,
+  avgA: f64,
+  avgB: f64,
   detailScore: f64,
   lumMatchWeight: f64,
-  csfWeight: f64
+  csfWeight: f64,
+  mcmHuePreservationWeight: f64,
+  mcmHiresColorPenaltyWeight: f64,
+  mcmMulticolorUsageBonusWeight: f64
 ): i32 {
   const clampedCandidateCount = candidateCount > CHAR_COUNT ? CHAR_COUNT : candidateCount;
   const clampedPoolSize = poolSize > MAX_MCM_POOL_SIZE ? MAX_MCM_POOL_SIZE : poolSize;
@@ -528,6 +655,7 @@ export function computeModeCandidatePool(
 
   const detailSlack = 1.0 - detailScore;
   const safeDetailSlack = detailSlack > 0.0 ? detailSlack : 0.0;
+  const hiresPenalty = computeMcmHiresColorPenalty(detailScore, avgA, avgB, mcmHiresColorPenaltyWeight);
   let selectedCount: i32 = 0;
   resetPoolTopScores(clampedPoolSize);
 
@@ -549,7 +677,8 @@ export function computeModeCandidatePool(
           bgErr +
           <f64>outputSetErrs[hiresBase + fg] +
           csfPenalty +
-          lumMatchWeight * lumDiff * lumDiff;
+          lumMatchWeight * lumDiff * lumDiff +
+          hiresPenalty;
         selectedCount = insertPoolCandidate(ch, fg, 0, total, clampedPoolSize, selectedCount);
       }
     }
@@ -566,19 +695,78 @@ export function computeModeCandidatePool(
       const count1 = <f64>rankRefMcmBpCounts[countsBase + 1];
       const count2 = <f64>rankRefMcmBpCounts[countsBase + 2];
       const count3 = <i32>rankRefMcmBpCounts[countsBase + 3];
+      const count3f = <f64>count3;
       const fixedL =
         count0 * rankPaletteL[bg] +
         count1 * rankPaletteL[mc1] +
         count2 * rankPaletteL[mc2];
+      const fixedA =
+        count0 * rankPaletteA[bg] +
+        count1 * rankPaletteA[mc1] +
+        count2 * rankPaletteA[mc2];
+      const fixedB =
+        count0 * rankPaletteB[bg] +
+        count1 * rankPaletteB[mc1] +
+        count2 * rankPaletteB[mc2];
+      const multicolorUsageBonus = computeMcmMulticolorUsageBonus(
+        count1,
+        count2,
+        count3f,
+        detailScore,
+        avgA,
+        avgB,
+        mcmMulticolorUsageBonusWeight
+      );
+      if (count3 == 0) {
+        const renderedL = fixedL / <f64>PAIR_COUNT;
+        const renderedA = fixedA / <f64>PAIR_COUNT;
+        const renderedB = fixedB / <f64>PAIR_COUNT;
+        const lumDiff = avgL - renderedL;
+        const hueBonus = computeHuePreservationBonus(
+          avgA,
+          avgB,
+          renderedA,
+          renderedB,
+          mcmHuePreservationWeight
+        );
+        const total =
+          2.0 * fixedErr +
+          lumMatchWeight * lumDiff * lumDiff +
+          csfPenalty -
+          hueBonus -
+          multicolorUsageBonus;
+        selectedCount = insertPoolCandidate(
+          ch,
+          MCM_CANONICAL_UNUSED_COLOR_RAM,
+          1,
+          total,
+          clampedPoolSize,
+          selectedCount
+        );
+        continue;
+      }
+
       const bp3Base = bpBase + 48;
 
       for (let fg: i32 = 0; fg < 8; fg++) {
-        if (count3 > 0 && !rankHasContrast(fg, bg)) continue;
-        const lumDiff = avgL - ((fixedL + <f64>count3 * rankPaletteL[fg]) / <f64>PAIR_COUNT);
+        if (!rankHasContrast(fg, bg)) continue;
+        const renderedL = (fixedL + count3f * rankPaletteL[fg]) / <f64>PAIR_COUNT;
+        const renderedA = (fixedA + count3f * rankPaletteA[fg]) / <f64>PAIR_COUNT;
+        const renderedB = (fixedB + count3f * rankPaletteB[fg]) / <f64>PAIR_COUNT;
+        const lumDiff = avgL - renderedL;
+        const hueBonus = computeHuePreservationBonus(
+          avgA,
+          avgB,
+          renderedA,
+          renderedB,
+          mcmHuePreservationWeight
+        );
         const total =
           2.0 * (<f64>fixedErr + <f64>outputBitPairErrs[bp3Base + fg]) +
           lumMatchWeight * lumDiff * lumDiff +
-          csfPenalty;
+          csfPenalty -
+          hueBonus -
+          multicolorUsageBonus;
         selectedCount = insertPoolCandidate(ch, fg | 8, 1, total, clampedPoolSize, selectedCount);
       }
     }

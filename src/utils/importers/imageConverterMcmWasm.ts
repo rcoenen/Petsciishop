@@ -50,6 +50,8 @@ type McmKernelExports = {
   getPoolTopScoresPtr(): number;
   getRankSampleCellIndicesPtr(): number;
   getRankSampleAvgLPtr(): number;
+  getRankSampleAvgAPtr(): number;
+  getRankSampleAvgBPtr(): number;
   getRankSampleDetailScoresPtr(): number;
   getRankSampleSaliencyWeightsPtr(): number;
   getRankSampleTotalErrByColorPtr(): number;
@@ -58,7 +60,11 @@ type McmKernelExports = {
   getRankGlyphSpatialFrequencyPtr(): number;
   getRankRefMcmBpCountsPtr(): number;
   getRankBinaryMixLPtr(): number;
+  getRankBinaryMixAPtr(): number;
+  getRankBinaryMixBPtr(): number;
   getRankPaletteLPtr(): number;
+  getRankPaletteAPtr(): number;
+  getRankPaletteBPtr(): number;
   getRankContrastMaskPtr(): number;
   getRankTopBgsPtr(): number;
   getRankTopMc1sPtr(): number;
@@ -73,6 +79,9 @@ type McmKernelExports = {
     finalistCount: number,
     lumMatchWeight: number,
     csfWeight: number,
+    mcmHuePreservationWeight: number,
+    mcmHiresColorPenaltyWeight: number,
+    mcmMulticolorUsageBonusWeight: number,
     manualBgColor: number
   ): number;
   computeModeCandidatePool(
@@ -83,9 +92,14 @@ type McmKernelExports = {
     mc1: number,
     mc2: number,
     avgL: number,
+    avgA: number,
+    avgB: number,
     detailScore: number,
     lumMatchWeight: number,
-    csfWeight: number
+    csfWeight: number,
+    mcmHuePreservationWeight: number,
+    mcmHiresColorPenaltyWeight: number,
+    mcmMulticolorUsageBonusWeight: number
   ): number;
 };
 
@@ -158,6 +172,8 @@ export class McmWasmKernel {
   private poolTopScoresView: Float64Array;
   private rankSampleCellIndicesView: Int32Array;
   private rankSampleAvgLView: Float64Array;
+  private rankSampleAvgAView: Float64Array;
+  private rankSampleAvgBView: Float64Array;
   private rankSampleDetailScoresView: Float64Array;
   private rankSampleSaliencyWeightsView: Float64Array;
   private rankSampleTotalErrByColorView: Float32Array;
@@ -166,7 +182,11 @@ export class McmWasmKernel {
   private rankGlyphSpatialFrequencyView: Float32Array;
   private rankRefMcmBpCountsView: Uint8Array;
   private rankBinaryMixLView: Float64Array;
+  private rankBinaryMixAView: Float64Array;
+  private rankBinaryMixBView: Float64Array;
   private rankPaletteLView: Float64Array;
+  private rankPaletteAView: Float64Array;
+  private rankPaletteBView: Float64Array;
   private rankContrastMaskView: Uint8Array;
   private rankTopBgsView: Uint8Array;
   private rankTopMc1sView: Uint8Array;
@@ -182,7 +202,11 @@ export class McmWasmKernel {
   private outputHammingView: Uint8Array;
   private loadedRankingMetrics: {
     binaryMixL: Float64Array;
+    binaryMixA: Float64Array;
+    binaryMixB: Float64Array;
     pL: Float64Array;
+    pA: Float64Array;
+    pB: Float64Array;
     pairDiff: Float64Array;
     maxPairDiff: number;
   } | null = null;
@@ -202,6 +226,8 @@ export class McmWasmKernel {
     this.poolTopScoresView = new Float64Array(exports.memory.buffer, exports.getPoolTopScoresPtr(), 16);
     this.rankSampleCellIndicesView = new Int32Array(exports.memory.buffer, exports.getRankSampleCellIndicesPtr(), 64);
     this.rankSampleAvgLView = new Float64Array(exports.memory.buffer, exports.getRankSampleAvgLPtr(), 64);
+    this.rankSampleAvgAView = new Float64Array(exports.memory.buffer, exports.getRankSampleAvgAPtr(), 64);
+    this.rankSampleAvgBView = new Float64Array(exports.memory.buffer, exports.getRankSampleAvgBPtr(), 64);
     this.rankSampleDetailScoresView = new Float64Array(exports.memory.buffer, exports.getRankSampleDetailScoresPtr(), 64);
     this.rankSampleSaliencyWeightsView = new Float64Array(exports.memory.buffer, exports.getRankSampleSaliencyWeightsPtr(), 64);
     this.rankSampleTotalErrByColorView = new Float32Array(exports.memory.buffer, exports.getRankSampleTotalErrByColorPtr(), 64 * 16);
@@ -210,7 +236,11 @@ export class McmWasmKernel {
     this.rankGlyphSpatialFrequencyView = new Float32Array(exports.memory.buffer, exports.getRankGlyphSpatialFrequencyPtr(), 256);
     this.rankRefMcmBpCountsView = new Uint8Array(exports.memory.buffer, exports.getRankRefMcmBpCountsPtr(), 256 * 4);
     this.rankBinaryMixLView = new Float64Array(exports.memory.buffer, exports.getRankBinaryMixLPtr(), 65 * 16 * 16);
+    this.rankBinaryMixAView = new Float64Array(exports.memory.buffer, exports.getRankBinaryMixAPtr(), 65 * 16 * 16);
+    this.rankBinaryMixBView = new Float64Array(exports.memory.buffer, exports.getRankBinaryMixBPtr(), 65 * 16 * 16);
     this.rankPaletteLView = new Float64Array(exports.memory.buffer, exports.getRankPaletteLPtr(), 16);
+    this.rankPaletteAView = new Float64Array(exports.memory.buffer, exports.getRankPaletteAPtr(), 16);
+    this.rankPaletteBView = new Float64Array(exports.memory.buffer, exports.getRankPaletteBPtr(), 16);
     this.rankContrastMaskView = new Uint8Array(exports.memory.buffer, exports.getRankContrastMaskPtr(), 16 * 8);
     this.rankTopBgsView = new Uint8Array(exports.memory.buffer, exports.getRankTopBgsPtr(), 16);
     this.rankTopMc1sView = new Uint8Array(exports.memory.buffer, exports.getRankTopMc1sPtr(), 16);
@@ -307,6 +337,8 @@ export class McmWasmKernel {
     cell: {
       totalErrByColor: Float32Array;
       avgL: number;
+      avgA: number;
+      avgB: number;
       detailScore: number;
     },
     candidateScreencodes: Uint16Array,
@@ -317,13 +349,20 @@ export class McmWasmKernel {
     metrics: {
       pairDiff: Float64Array;
       binaryMixL: Float64Array;
+      binaryMixA: Float64Array;
+      binaryMixB: Float64Array;
       pL: Float64Array;
+      pA: Float64Array;
+      pB: Float64Array;
       maxPairDiff: number;
     },
     context: McmKernelContext,
     settings: {
       lumMatchWeight: number;
       csfWeight: number;
+      mcmHuePreservationWeight: number;
+      mcmHiresColorPenaltyWeight: number;
+      mcmMulticolorUsageBonusWeight: number;
     }
   ): {
     count: number;
@@ -346,9 +385,14 @@ export class McmWasmKernel {
       mc1,
       mc2,
       cell.avgL,
+      cell.avgA,
+      cell.avgB,
       cell.detailScore,
       settings.lumMatchWeight,
-      settings.csfWeight
+      settings.csfWeight,
+      settings.mcmHuePreservationWeight,
+      settings.mcmHiresColorPenaltyWeight,
+      settings.mcmMulticolorUsageBonusWeight
     );
 
     return {
@@ -364,6 +408,8 @@ export class McmWasmKernel {
     cells: ArrayLike<{
       totalErrByColor: Float32Array;
       avgL: number;
+      avgA: number;
+      avgB: number;
       detailScore: number;
       saliencyWeight: number;
     }>,
@@ -374,13 +420,20 @@ export class McmWasmKernel {
     metrics: {
       pairDiff: Float64Array;
       binaryMixL: Float64Array;
+      binaryMixA: Float64Array;
+      binaryMixB: Float64Array;
       pL: Float64Array;
+      pA: Float64Array;
+      pB: Float64Array;
       maxPairDiff: number;
     },
     context: McmKernelContext,
     settings: {
       lumMatchWeight: number;
       csfWeight: number;
+      mcmHuePreservationWeight: number;
+      mcmHiresColorPenaltyWeight: number;
+      mcmMulticolorUsageBonusWeight: number;
     }
   ): Array<{ triple: [number, number, number]; score: number }> {
     this.ensureContext(context);
@@ -394,6 +447,8 @@ export class McmWasmKernel {
       const cell = cells[cellIndex];
       this.rankSampleCellIndicesView[sample] = cellIndex;
       this.rankSampleAvgLView[sample] = cell.avgL;
+      this.rankSampleAvgAView[sample] = cell.avgA;
+      this.rankSampleAvgBView[sample] = cell.avgB;
       this.rankSampleDetailScoresView[sample] = cell.detailScore;
       this.rankSampleSaliencyWeightsView[sample] = cell.saliencyWeight;
       this.rankSampleTotalErrByColorView.set(cell.totalErrByColor, sample * 16);
@@ -405,6 +460,9 @@ export class McmWasmKernel {
       Math.min(finalistCount, 16),
       settings.lumMatchWeight,
       settings.csfWeight,
+      settings.mcmHuePreservationWeight,
+      settings.mcmHiresColorPenaltyWeight,
+      settings.mcmMulticolorUsageBonusWeight,
       manualBgColor ?? -1
     );
 
@@ -461,13 +519,21 @@ export class McmWasmKernel {
 
   private ensureRankingMetrics(metrics: {
     binaryMixL: Float64Array;
+    binaryMixA: Float64Array;
+    binaryMixB: Float64Array;
     pL: Float64Array;
+    pA: Float64Array;
+    pB: Float64Array;
     pairDiff: Float64Array;
     maxPairDiff: number;
   }) {
     if (
       this.loadedRankingMetrics?.binaryMixL === metrics.binaryMixL &&
+      this.loadedRankingMetrics?.binaryMixA === metrics.binaryMixA &&
+      this.loadedRankingMetrics?.binaryMixB === metrics.binaryMixB &&
       this.loadedRankingMetrics?.pL === metrics.pL &&
+      this.loadedRankingMetrics?.pA === metrics.pA &&
+      this.loadedRankingMetrics?.pB === metrics.pB &&
       this.loadedRankingMetrics?.pairDiff === metrics.pairDiff &&
       this.loadedRankingMetrics?.maxPairDiff === metrics.maxPairDiff
     ) {
@@ -475,7 +541,11 @@ export class McmWasmKernel {
     }
 
     this.rankBinaryMixLView.set(metrics.binaryMixL);
+    this.rankBinaryMixAView.set(metrics.binaryMixA);
+    this.rankBinaryMixBView.set(metrics.binaryMixB);
     this.rankPaletteLView.set(metrics.pL);
+    this.rankPaletteAView.set(metrics.pA);
+    this.rankPaletteBView.set(metrics.pB);
     for (let bg = 0; bg < 16; bg++) {
       for (let fg = 0; fg < 8; fg++) {
         this.rankContrastMaskView[bg * 8 + fg] =

@@ -19,6 +19,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     rollupOptions: {
+      input: {
+        app: resolve(__dirname, 'index.html'),
+        harness: resolve(__dirname, 'truski3000-harness.html'),
+      },
       output: {
         manualChunks(id: string) {
           if (id.includes('node_modules')) {

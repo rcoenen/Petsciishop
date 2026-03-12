@@ -49,6 +49,14 @@ const presetFilterIndex = process.argv.indexOf('--preset');
 const presetFilter = presetFilterIndex >= 0 ? process.argv[presetFilterIndex + 1] ?? null : null;
 const accelerationFilterIndex = process.argv.indexOf('--acceleration');
 const accelerationFilter = accelerationFilterIndex >= 0 ? process.argv[accelerationFilterIndex + 1] ?? null : null;
+const serverModeIndex = process.argv.indexOf('--server');
+const serverMode = serverModeIndex >= 0 ? process.argv[serverModeIndex + 1] ?? 'preview' : 'preview';
+if (!['preview', 'dev'].includes(serverMode)) {
+  console.error(`Unknown server mode: ${serverMode}`);
+  console.error('Use --server preview or --server dev');
+  process.exit(1);
+}
+const skipBuild = process.argv.includes('--skip-build');
 const saliencyFlagIndex = process.argv.indexOf('--saliency');
 const saliencyOverride = saliencyFlagIndex >= 0 ? parseFloat(process.argv[saliencyFlagIndex + 1] ?? 'NaN') : null;
 const lumFlagIndex = process.argv.indexOf('--lum');
@@ -96,6 +104,9 @@ const harnessProfiles = [
       saliencyAlpha: 3.0,
       lumMatchWeight: 12,
       csfWeight: 10,
+      mcmHuePreservationWeight: 10,
+      mcmHiresColorPenaltyWeight: 4,
+      mcmMulticolorUsageBonusWeight: 4,
       includeTypographic: true,
       paletteId: 'colodore',
       manualBgColor: null,
@@ -220,10 +231,11 @@ function waitForUrl(url, timeoutMs = 90000) {
   });
 }
 
-function startHarnessServer() {
+function startHarnessServer(mode = 'preview') {
+  const scriptName = mode === 'dev' ? 'dev' : 'preview';
   const child = spawn(
     process.platform === 'win32' ? 'npm.cmd' : 'npm',
-    ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(preferredHarnessPort)],
+    ['run', scriptName, '--', '--host', '127.0.0.1', '--port', String(preferredHarnessPort)],
     {
       cwd: repoRoot,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -792,6 +804,9 @@ function summarizeSettingsForDisplay(settings) {
     `sal=${settings.saliencyAlpha}`,
     `lum=${settings.lumMatchWeight}`,
     `csf=${settings.csfWeight}`,
+    `mcmHue=${settings.mcmHuePreservationWeight ?? 0}`,
+    `mcmHires=${settings.mcmHiresColorPenaltyWeight ?? 0}`,
+    `mcmMulti=${settings.mcmMulticolorUsageBonusWeight ?? 0}`,
     settings.includeTypographic ? 'typo=on' : 'typo=off',
     `palette=${settings.paletteId}`,
     `manualBg=${settings.manualBgColor == null ? 'auto' : settings.manualBgColor}`,
@@ -1182,9 +1197,13 @@ async function main() {
   await syncFixturesToPublic();
   await rm(latestOutputDir, { recursive: true, force: true });
   await mkdir(latestOutputDir, { recursive: true });
-  await runCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build']);
+  if (!skipBuild) {
+    await runCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build']);
+  } else {
+    console.log('Skipping build step and reusing existing dist/assets.');
+  }
 
-  const { child: harnessServer, readyUrl } = startHarnessServer();
+  const { child: harnessServer, readyUrl } = startHarnessServer(serverMode);
   const stopHarnessServer = () => {
     if (!harnessServer.killed) {
       harnessServer.kill('SIGTERM');
@@ -1214,6 +1233,7 @@ async function main() {
     await page.goto(harnessUrl, { waitUntil: 'networkidle' });
     await page.waitForFunction(() => Boolean(window.__TRUSKI_HARNESS__));
 
+    console.log(`Harness server mode: ${serverMode}${skipBuild ? ' (reused build)' : ''}`);
     const scenarios = await listScenarios();
     console.log(`Harness acceleration request: ${formatRequestedAcceleration()}`);
     console.log(`Harness scenario timeout: ${scenarioTimeoutMs > 0 ? `${scenarioTimeoutMs}ms` : 'disabled'}`);

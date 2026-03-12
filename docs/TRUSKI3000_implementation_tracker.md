@@ -193,6 +193,12 @@ All constants in `imageConverterStandardCore.ts`:
   - `MCM_MULTICOLOR_USAGE_BONUS_WEIGHT = 4.0`
 - Operational rule going forward: do not treat `skeletor` MCM compare drift against that stored baseline as evidence of a recent WASM regression unless the effective tuning profile and objective constants are held fixed. Baselines need settings/objective provenance before they are used as regression gates.
 
+### CODEX: Compact MCM path isolation (2026-03-11)
+- The new compact MCM solve-scratch path is not the source of the current `skeletor` output drift. Under current HEAD and `current-defaults`, a forced preview-side old WASM object-pool capture reproduced the compact path exactly.
+- The matched current-code result was: `charset upper`, bg `11`, shared `[10,12]`, `qualityMeanDeltaE 0.1406041834`, `previewHash e3d6f78de4e62b4d7b23d0551d820cd65229e9051dd0e21161ad4fac764a71be`, `screencodesHash 3e6523d87875761e6c6c136ce0d9e5e8211655a909a354bdb7bea2e82d3530a4`, `colorsHash 880d4f4b2cb276b3d966caf6b56cdab8485dca1bcc7bcfc6100c5e4dac8907e3`, with preview diff `0` pixels between old-path and compact-path captures.
+- The compact path lowered the isolated preview capture from `31449.7ms` to `24318.4ms` while keeping the current-code output unchanged.
+- Operational rule going forward: if `skeletor` differs from the older `gate-wasm` artifact, attribute that to earlier current-code MCM behavior changes until proven otherwise; do not blame the compact scratch rewrite.
+
 ### Next: MCM Quality Tuning (port Standard innovations + MCM-specific)
 
 **Shared with ECM** (same changes benefit both — items 1, 3 above apply to MCM's hires-within-MCM candidates too):
